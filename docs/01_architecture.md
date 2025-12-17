@@ -1,109 +1,69 @@
 # System Architecture
 
-## Overview
+> AI-Powered Algorithmic Trading Platform for Indian Markets (NSE/BSE)
 
-This document describes the two-stage architecture of the Algorithmic Trading System, designed to mimic the cognitive process of professional traders.
+## Architecture Overview
 
-**Target Market**: 🇮🇳 **Indian Stock Market (NSE/BSE)**
+![System Architecture](images/system_architecture.png)
 
-**Data Sources**:
-- Primary: NSEpy, yfinance (for NSE/BSE data)
-- Optional: NewsAPI (sentiment analysis - user configurable)
+Our platform implements a **two-stage architecture** that mimics the cognitive process of professional traders:
 
----
-
-## Design Philosophy
-
-### The Trader's Cognitive Process
-
-A professional trader's behavior is a two-stage process:
-
-1. **Analysis (Prediction)**: The trader forms a mental forecast by:
-   - Reading charts (Technical Indicators)
-   - Consuming news (Sentiment Analysis)
-   - Assessing market uncertainty
-
-2. **Decision (Optimization)**: The trader executes trades based on:
-   - Their forecast
-   - Personal risk tolerance
-   - Current portfolio state
-
-Our system replicates this exact process algorithmically.
+1. **Layer 1 (Data Processing)**: Analyzes market data and generates predictions
+2. **Layer 2 (Decision Engine)**: Optimizes trading decisions using reinforcement learning
+3. **Trader Behavior Module**: Personalizes strategies based on individual risk tolerance
 
 ---
 
-## Architecture Diagram
+## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           INPUT SOURCES                                  │
-├─────────────────┬─────────────────┬─────────────────┬───────────────────┤
-│   Market Data   │   News/Text     │   User Profile  │  Historical Data  │
-│   (OHLCV)       │   (Headlines)   │   (Risk Prefs)  │  (Training)       │
-└────────┬────────┴────────┬────────┴────────┬────────┴─────────┬─────────┘
-         │                 │                 │                  │
-         ▼                 ▼                 ▼                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     LAYER 1: DATA PROCESSING                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐   │
-│  │ DeepAR-Attention │  │ Technical        │  │ FinBERT Sentiment    │   │
-│  │ ─────────────────│  │ Indicators       │  │ ────────────────────│   │
-│  │ • Price μ (mean) │  │ ─────────────────│  │ • News score [-1,1] │   │
-│  │ • Price σ (std)  │  │ • RSI, MACD      │  │ • Confidence level  │   │
-│  │ • Attention wts  │  │ • Bollinger      │  │                      │   │
-│  └────────┬─────────┘  │ • 30+ signals    │  └──────────┬───────────┘   │
-│           │            └────────┬─────────┘             │               │
-│           │                     │                       │               │
-│  ┌────────┴─────────────────────┴───────────────────────┴───────────┐   │
-│  │                     TRADER BEHAVIOR MODULE                        │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐   │   │
-│  │  │ Risk        │  │ Timeframe   │  │ Break-Even Tracker      │   │   │
-│  │  │ Tolerance   │  │ Preference  │  │ • Entry price           │   │   │
-│  │  │ [0.0 - 1.0] │  │ [days]      │  │ • Current P&L           │   │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
-│                           STATE BUILDER                                  │
-│                    (Combines all into state vector)                      │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │
-                               STATE VECTOR
-                           (50+ dimensional)
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      LAYER 2: DECISION ENGINE                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                    PPO Agent (Actor-Critic)                       │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐ │   │
-│  │  │ Policy Network (Actor)                                       │ │   │
-│  │  │ Input: State Vector → Hidden: 256 → Output: π(a|s)          │ │   │
-│  │  └─────────────────────────────────────────────────────────────┘ │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐ │   │
-│  │  │ Value Network (Critic)                                       │ │   │
-│  │  │ Input: State Vector → Hidden: 256 → Output: V(s)            │ │   │
-│  │  └─────────────────────────────────────────────────────────────┘ │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
-│  ┌───────────────────┐         ┌─────────────────────────────────────┐  │
-│  │ REWARD FUNCTION   │         │ ACTION SPACE                        │  │
-│  │ ─────────────────│         │ ──────────────────────────────────── │  │
-│  │ Sharpe Ratio      │         │ 0: HOLD  │  1: BUY  │  2: SELL      │  │
-│  │ (Risk-Adjusted)   │         │                                      │  │
-│  └───────────────────┘         └─────────────────────────────────────┘  │
-│                                                                          │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │
-                                     ▼
-                            ┌─────────────────┐
-                            │ TRADING SIGNAL  │
-                            │ + Position Size │
-                            │ + Confidence    │
-                            └─────────────────┘
+```mermaid
+graph TB
+    subgraph "Data Sources"
+        A[NSE/BSE Market Data] --> B[yfinance API]
+        C[Historical NIFTY 50] --> B
+    end
+    
+    subgraph "Layer 1: Data Processing"
+        B --> D[Technical Indicators<br/>30+ Indicators]
+        B --> E[LSTM Predictor<br/>Price Forecasting]
+        D --> F[State Vector Builder]
+        E --> F
+    end
+    
+    subgraph "Trader Behavior"
+        G[Risk Profiler] --> H[Position Sizer]
+        H --> I[Break-Even Tracker]
+    end
+    
+    subgraph "Layer 2: Decision Engine"
+        F --> J[PPO Agent]
+        I --> J
+        J --> K{Trading Signal}
+    end
+    
+    K -->|BUY| L[Execute Trade]
+    K -->|SELL| L
+    K -->|HOLD| M[Wait]
+    
+    subgraph "API Layer"
+        L --> N[FastAPI Backend]
+        M --> N
+        N --> O[REST Endpoints]
+    end
+    
+    subgraph "Frontend"
+        O --> P[Next.js Dashboard]
+        P --> Q[Real-time Signals]
+        P --> R[Charts & Analytics]
+    end
+
+    style A fill:#3b82f6
+    style B fill:#3b82f6
+    style D fill:#8b5cf6
+    style E fill:#8b5cf6
+    style J fill:#a855f7
+    style N fill:#f97316
+    style P fill:#06b6d4
 ```
 
 ---
@@ -112,63 +72,172 @@ Our system replicates this exact process algorithmically.
 
 ### Layer 1: Data Processing
 
-| Component | Input | Output | Purpose |
-|-----------|-------|--------|---------|
-| DeepAR-Attention | OHLCV time series | μ, σ, attention weights | Probabilistic price forecast |
-| Technical Indicators | OHLCV | 30+ normalized signals | Market pattern detection |
-| FinBERT | News headlines | Sentiment score [-1, 1] | Market sentiment |
-| Trader Behavior | User preferences | Risk parameters | Personalization |
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Market Data | yfinance | Fetch OHLCV data from NSE/BSE |
+| Technical Indicators | pandas-ta | Compute 30+ indicators (RSI, MACD, BB, etc.) |
+| LSTM Predictor | PyTorch | Probabilistic price forecasting |
+| State Builder | NumPy | Normalize and combine all features |
 
-### Layer 2: Decision Engine
-
-| Component | Algorithm | Purpose |
-|-----------|-----------|---------|
-| PPO Agent | Proximal Policy Optimization | Stable policy learning |
-| Reward Function | Rolling Sharpe Ratio | Risk-adjusted optimization |
-| Trading Environment | Custom Gym Environment | Simulates market interaction |
+**Files:**
+- [`market_data.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/market_data.py) - NSE/BSE data fetching
+- [`technical_indicators.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/technical_indicators.py) - 30+ indicators
+- [`state_builder.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/state_builder.py) - Feature normalization
 
 ---
 
-## Data Flow
+### Layer 2: Decision Engine
 
-1. **Market Data Ingestion** → Fetch OHLCV data from API
-2. **Feature Engineering** → Compute technical indicators
-3. **Probabilistic Forecast** → DeepAR generates price distribution
-4. **Sentiment Analysis** → FinBERT processes news
-5. **State Construction** → Combine all features + trader behavior
-6. **Policy Inference** → PPO agent selects action
-7. **Signal Generation** → Output trading signal with confidence
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Trading Environment | Gymnasium | Custom trading simulation |
+| PPO Agent | Stable-Baselines3 | Policy optimization |
+| Reward Function | Custom | Sharpe Ratio optimization |
+
+**Training Results:**
+- **Average Return**: 132.28%
+- **Sharpe Ratio**: 0.66
+- **Timesteps**: 30,000
+
+**Files:**
+- [`trading_env.py`](file:///d:/Major%20Project/backend/app/layer2_decision/trading_env.py) - Gymnasium environment
+- [`ppo_agent.py`](file:///d:/Major%20Project/backend/app/layer2_decision/ppo_agent.py) - PPO wrapper
+- [`reward_function.py`](file:///d:/Major%20Project/backend/app/layer2_decision/reward_function.py) - Sharpe optimization
+
+---
+
+### Trader Behavior Module
+
+```mermaid
+graph LR
+    A[Risk Questionnaire] --> B[Risk Score<br/>0.0 - 1.0]
+    B --> C{Risk Category}
+    C -->|< 0.3| D[Conservative]
+    C -->|0.3-0.5| E[Moderate]
+    C -->|0.5-0.7| F[Growth]
+    C -->|> 0.7| G[Aggressive]
+    
+    D --> H[Position Sizer]
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I[Kelly Criterion]
+    H --> J[Fixed %]
+    H --> K[Volatility-Adjusted]
+    
+    I --> L[Trade Size]
+    J --> L
+    K --> L
+```
+
+**Components:**
+- **Risk Profiler**: Questionnaire-based risk assessment
+- **Position Sizer**: Kelly Criterion, volatility-adjusted sizing
+- **Break-Even Tracker**: P&L and position management
+
+---
+
+## API Architecture
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant API
+    participant LSTM
+    participant PPO
+    participant Market
+
+    User->>Frontend: Request Signal
+    Frontend->>API: GET /trading/signals/RELIANCE.NS
+    API->>Market: Fetch OHLCV Data
+    Market-->>API: Price Data
+    API->>LSTM: Predict Price
+    LSTM-->>API: Predicted Price + Confidence
+    API->>PPO: Get Action
+    PPO-->>API: BUY/SELL/HOLD
+    API-->>Frontend: Signal Response
+    Frontend-->>User: Display Signal Card
+```
 
 ---
 
 ## Technology Stack
 
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Backend | FastAPI | 0.100+ |
+| ML Training | PyTorch | 2.0+ |
+| RL Agent | Stable-Baselines3 | 2.0+ |
+| Frontend | Next.js | 14+ |
+| Styling | TailwindCSS | 3.0+ |
+| State Management | Zustand | 4.0+ |
+
+---
+
+## Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph "Production"
+        A[Nginx Reverse Proxy] --> B[FastAPI Backend]
+        A --> C[Next.js Frontend]
+        B --> D[(PostgreSQL)]
+        B --> E[(Redis Cache)]
+        B --> F[Model Files<br/>LSTM + PPO]
+    end
+    
+    subgraph "Development"
+        G[uvicorn --reload] --> H[Hot Reload]
+        I[npm run dev] --> J[Turbopack]
+    end
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                 │
-│  Next.js 14 │ TypeScript │ TailwindCSS │ Recharts               │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                           REST API
-                                │
-┌─────────────────────────────────────────────────────────────────┐
-│                         BACKEND                                  │
-│  Python 3.11 │ FastAPI │ Pydantic │ SQLAlchemy                  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-┌───────┴───────┐       ┌───────┴───────┐       ┌───────┴───────┐
-│   ML MODELS   │       │   DATABASE    │       │     CACHE     │
-│   PyTorch     │       │   PostgreSQL  │       │     Redis     │
-│   SB3         │       │               │       │               │
-└───────────────┘       └───────────────┘       └───────────────┘
+
+---
+
+## Directory Structure
+
+```
+Deep-Learning-for-Algo-Trading/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/         # FastAPI endpoints
+│   │   ├── layer1_data_processing/
+│   │   │   ├── market_data.py
+│   │   │   ├── technical_indicators.py
+│   │   │   └── state_builder.py
+│   │   ├── layer2_decision/
+│   │   │   ├── trading_env.py
+│   │   │   ├── ppo_agent.py
+│   │   │   └── reward_function.py
+│   │   ├── trader_behavior/
+│   │   │   ├── risk_profiler.py
+│   │   │   ├── position_sizer.py
+│   │   │   └── breakeven_tracker.py
+│   │   └── services/
+│   │       └── prediction_service.py
+│   ├── training/
+│   │   ├── train_lstm.py
+│   │   └── train_ppo.py
+│   ├── models/                 # Trained models
+│   │   ├── lstm_final.pt
+│   │   └── ppo_trading_final.zip
+│   └── data/                   # Training data
+├── frontend/
+│   └── src/
+│       ├── app/                # Next.js pages
+│       ├── components/         # React components
+│       └── lib/                # Utilities
+├── docs/                       # Documentation
+└── references/                 # Research papers
 ```
 
 ---
 
 ## Next Steps
 
-- See [Data Processing](02_data_processing.md) for Layer 1 details
-- See [Decision Engine](03_decision_engine.md) for Layer 2 details
-- See [Trader Behavior](04_trader_behavior.md) for personalization
+1. **Database Integration**: PostgreSQL for user profiles and trade history
+2. **Authentication**: JWT-based user authentication
+3. **Docker Deployment**: Containerized production deployment
+4. **Real-time WebSocket**: Live price updates

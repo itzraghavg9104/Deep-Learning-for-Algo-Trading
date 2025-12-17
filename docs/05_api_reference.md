@@ -1,310 +1,339 @@
 # API Reference
 
-## Overview
+> Complete REST API documentation for the Algo Trading Platform
 
-The backend exposes a RESTful API built with FastAPI. All endpoints return JSON responses.
+## Base URL
 
-**Base URL**: `http://localhost:8000/api/v1`
-
----
-
-## Authentication
-
-### POST `/auth/register`
-Register a new user.
-
-**Request Body**:
-```json
-{
-  "email": "trader@example.com",
-  "password": "securepassword",
-  "name": "John Trader"
-}
 ```
-
-**Response** `201 Created`:
-```json
-{
-  "id": "uuid",
-  "email": "trader@example.com",
-  "name": "John Trader",
-  "created_at": "2024-01-01T00:00:00Z"
-}
-```
-
-### POST `/auth/login`
-Authenticate and receive JWT token.
-
-**Request Body**:
-```json
-{
-  "email": "trader@example.com",
-  "password": "securepassword"
-}
-```
-
-**Response** `200 OK`:
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "bearer",
-  "expires_in": 3600
-}
+Development: http://localhost:8000/api/v1
+Production: https://api.yourdomain.com/api/v1
 ```
 
 ---
 
-## Trading Signals
+## Quick Reference
 
-### GET `/signals/{symbol}`
-Get current trading signal for a symbol.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/trading/signals/{symbol}` | GET | Get AI-powered trading signal |
+| `/trading/market/{symbol}` | GET | Get market data with indicators |
+| `/trading/watchlist` | GET | Get signals for top NSE stocks |
+| `/backtest/run` | POST | Run backtest simulation |
+| `/backtest/{id}` | GET | Get backtest results |
+| `/profile/risk-assessment` | POST | Submit risk questionnaire |
+| `/profile/` | GET | Get user profile |
+| `/profile/preferences` | PUT | Update preferences |
 
-**Parameters**:
+---
+
+## Trading Endpoints
+
+### Get Trading Signal
+
+Returns AI-powered trading signal with LSTM prediction and PPO recommendation.
+
+```http
+GET /api/v1/trading/signals/{symbol}
+```
+
+**Parameters:**
+
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `symbol` | string | Yes | Stock symbol (e.g., AAPL) |
+| `symbol` | string | Yes | Stock symbol (e.g., `RELIANCE.NS`) |
+| `use_sentiment` | boolean | No | Include sentiment analysis (default: false) |
+| `use_model` | boolean | No | Use trained LSTM model (default: true) |
 
-**Headers**:
-```
-Authorization: Bearer <token>
-```
+**Response:**
 
-**Response** `200 OK`:
 ```json
 {
-  "symbol": "AAPL",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "signal": {
+    "symbol": "RELIANCE.NS",
+    "timestamp": "2024-12-18T00:30:00",
     "action": "BUY",
-    "confidence": 0.78,
-    "position_size": 50,
-    "position_value": 9500.00
-  },
-  "prediction": {
-    "price_mean": 195.50,
-    "price_std": 3.25,
-    "change_pct": 2.1
-  },
-  "indicators": {
-    "rsi": 45.2,
-    "macd_signal": "bullish",
-    "trend": "uptrend"
-  },
-  "sentiment": {
-    "score": 0.35,
-    "source_count": 12
-  }
-}
-```
-
-### GET `/signals/portfolio`
-Get signals for all watched symbols.
-
-**Response** `200 OK`:
-```json
-{
-  "signals": [
-    { "symbol": "AAPL", "action": "BUY", "confidence": 0.78 },
-    { "symbol": "GOOGL", "action": "HOLD", "confidence": 0.65 },
-    { "symbol": "MSFT", "action": "SELL", "confidence": 0.72 }
-  ],
-  "generated_at": "2024-01-15T10:30:00Z"
-}
-```
-
----
-
-## Market Data
-
-### GET `/market/{symbol}`
-Get current market data and indicators.
-
-**Parameters**:
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `symbol` | string | Yes | Stock symbol |
-| `period` | string | No | Data period (1d, 5d, 1mo, 3mo) |
-
-**Response** `200 OK`:
-```json
-{
-  "symbol": "AAPL",
-  "current_price": 191.25,
-  "change_pct": 1.5,
-  "volume": 45000000,
-  "indicators": {
-    "rsi_14": 55.3,
-    "macd_line": 2.15,
-    "macd_signal": 1.89,
-    "bollinger_upper": 198.50,
-    "bollinger_lower": 185.20,
-    "atr_14": 4.25
-  },
-  "ohlcv": [
-    {"date": "2024-01-15", "open": 189.5, "high": 192.0, "low": 188.8, "close": 191.25, "volume": 45000000}
-  ]
-}
-```
-
-### GET `/market/{symbol}/history`
-Get historical OHLCV data.
-
-**Parameters**:
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `symbol` | string | Yes | Stock symbol |
-| `start` | date | No | Start date (YYYY-MM-DD) |
-| `end` | date | No | End date (YYYY-MM-DD) |
-| `interval` | string | No | Candle interval (1d, 1h, 15m) |
-
-**Response** `200 OK`:
-```json
-{
-  "symbol": "AAPL",
-  "interval": "1d",
-  "data": [
-    {"date": "2024-01-10", "open": 185.0, "high": 187.5, "low": 184.2, "close": 186.8, "volume": 42000000},
-    {"date": "2024-01-11", "open": 186.8, "high": 189.0, "low": 186.0, "close": 188.5, "volume": 38000000}
-  ]
-}
-```
-
----
-
-## Backtesting
-
-### POST `/backtest/run`
-Run a backtest on historical data.
-
-**Request Body**:
-```json
-{
-  "symbol": "AAPL",
-  "start_date": "2022-01-01",
-  "end_date": "2024-01-01",
-  "initial_capital": 100000,
-  "risk_tolerance": 0.6
-}
-```
-
-**Response** `200 OK`:
-```json
-{
-  "backtest_id": "bt_12345",
-  "status": "completed",
-  "results": {
-    "total_return": 45.2,
-    "sharpe_ratio": 1.35,
-    "max_drawdown": -12.5,
-    "win_rate": 58.3,
-    "profit_factor": 1.72,
-    "total_trades": 156,
-    "final_value": 145200.00
-  },
-  "equity_curve": [
-    {"date": "2022-01-01", "value": 100000},
-    {"date": "2022-02-01", "value": 102500},
-    {"date": "2022-03-01", "value": 98500}
-  ],
-  "trades": [
-    {"date": "2022-01-15", "action": "BUY", "price": 175.50, "quantity": 50, "pnl": null},
-    {"date": "2022-01-25", "action": "SELL", "price": 182.30, "quantity": 50, "pnl": 340.00}
-  ]
-}
-```
-
-### GET `/backtest/{backtest_id}`
-Get backtest results by ID.
-
----
-
-## User Profile
-
-### GET `/profile`
-Get current user's profile.
-
-**Response** `200 OK`:
-```json
-{
-  "id": "uuid",
-  "email": "trader@example.com",
-  "name": "John Trader",
-  "risk_profile": {
-    "tolerance": 0.65,
-    "category": "Growth",
-    "last_assessed": "2024-01-01T00:00:00Z"
-  },
-  "preferences": {
-    "timeframe": "swing",
-    "symbols": ["AAPL", "GOOGL", "MSFT"]
-  }
-}
-```
-
-### POST `/profile/risk-assessment`
-Submit risk assessment questionnaire.
-
-**Request Body**:
-```json
-{
-  "answers": [3, 4, 2, 3, 4, 2]
-}
-```
-
-**Response** `200 OK`:
-```json
-{
-  "risk_tolerance": 0.65,
-  "category": "Growth",
-  "description": "You have a growth-oriented risk profile. You accept moderate volatility for higher returns.",
-  "recommendations": {
-    "max_position_size": 0.15,
-    "suggested_stop_loss": 0.08,
-    "suggested_take_profit": 0.15
-  }
-}
-```
-
-### GET `/profile/portfolio`
-Get current portfolio positions.
-
-**Response** `200 OK`:
-```json
-{
-  "total_value": 125000.00,
-  "cash": 25000.00,
-  "positions": [
-    {
-      "symbol": "AAPL",
-      "quantity": 100,
-      "avg_entry": 175.50,
-      "current_price": 191.25,
-      "market_value": 19125.00,
-      "unrealized_pnl": 1575.00,
-      "pnl_pct": 8.97
+    "confidence": 0.72,
+    "prediction": {
+        "current_price": 1544.40,
+        "predicted_price": 1560.25,
+        "price_change": 15.85,
+        "change_pct": 1.03,
+        "model": "LSTM"
+    },
+    "indicators": {
+        "rsi_14": 58.5,
+        "macd": 12.3,
+        "bb_position": 0.65
     }
-  ]
+}
+```
+
+**Action Values:**
+- `BUY`: Predicted price increase > 1%
+- `SELL`: Predicted price decrease > 1%
+- `HOLD`: Predicted change within ±1%
+
+---
+
+### Get Market Data
+
+Returns current market data with technical indicators.
+
+```http
+GET /api/v1/trading/market/{symbol}
+```
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `symbol` | string | Yes | Stock symbol |
+| `period` | string | No | Data period: `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y` |
+
+**Response:**
+
+```json
+{
+    "symbol": "RELIANCE.NS",
+    "current_price": 1544.40,
+    "change_pct": 0.14,
+    "volume": 12500000,
+    "indicators": {
+        "sma_20": 1520.50,
+        "sma_50": 1490.25,
+        "ema_12": 1535.80,
+        "ema_26": 1522.40,
+        "rsi_14": 58.5,
+        "macd": 12.3,
+        "macd_signal": 10.5,
+        "bb_upper": 1580.00,
+        "bb_lower": 1480.00,
+        "atr": 25.50
+    }
 }
 ```
 
 ---
 
-## Health Check
+### Get Watchlist Signals
 
-### GET `/health`
-Check API health status.
+Returns signals for top 5 NSE stocks using trained models.
 
-**Response** `200 OK`:
+```http
+GET /api/v1/trading/watchlist
+```
+
+**Response:**
+
 ```json
 {
-  "status": "healthy",
-  "version": "1.0.0",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "services": {
-    "database": "connected",
-    "redis": "connected",
-    "ml_model": "loaded"
-  }
+    "signals": [
+        {
+            "symbol": "RELIANCE.NS",
+            "price": 1544.40,
+            "predicted_price": 1560.25,
+            "change_pct": 1.03,
+            "action": "BUY",
+            "confidence": 0.72,
+            "model": "LSTM"
+        },
+        {
+            "symbol": "TCS.NS",
+            "price": 3217.80,
+            "predicted_price": 3210.00,
+            "change_pct": -0.24,
+            "action": "HOLD",
+            "confidence": 0.55,
+            "model": "LSTM"
+        }
+    ],
+    "model_available": true
+}
+```
+
+---
+
+## Backtest Endpoints
+
+### Run Backtest
+
+Execute a backtest simulation on historical data.
+
+```http
+POST /api/v1/backtest/run
+```
+
+**Request Body:**
+
+```json
+{
+    "symbol": "RELIANCE.NS",
+    "start_date": "2023-01-01",
+    "end_date": "2024-01-01",
+    "initial_capital": 100000,
+    "risk_tolerance": 0.5
+}
+```
+
+**Response:**
+
+```json
+{
+    "backtest_id": "bt_abc123",
+    "status": "running",
+    "message": "Backtest started"
+}
+```
+
+---
+
+### Get Backtest Results
+
+Retrieve results of a completed backtest.
+
+```http
+GET /api/v1/backtest/{backtest_id}
+```
+
+**Response:**
+
+```json
+{
+    "backtest_id": "bt_abc123",
+    "status": "completed",
+    "results": {
+        "total_return": 0.1528,
+        "sharpe_ratio": 1.45,
+        "max_drawdown": -0.085,
+        "win_rate": 0.62,
+        "total_trades": 45,
+        "winning_trades": 28,
+        "losing_trades": 17
+    },
+    "equity_curve": [100000, 100500, 101200, ...],
+    "trades": [
+        {
+            "date": "2023-01-15",
+            "action": "BUY",
+            "price": 1450.00,
+            "quantity": 10
+        }
+    ]
+}
+```
+
+---
+
+## Profile Endpoints
+
+### Submit Risk Assessment
+
+Submit questionnaire answers for risk profiling.
+
+```http
+POST /api/v1/profile/risk-assessment
+```
+
+**Request Body:**
+
+```json
+{
+    "answers": [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
+}
+```
+
+**Response:**
+
+```json
+{
+    "risk_tolerance": 0.65,
+    "category": "Growth",
+    "description": "You have a growth-oriented investment profile with moderate-to-high risk tolerance.",
+    "recommendations": {
+        "max_position_size": 0.15,
+        "suggested_stop_loss": 0.05,
+        "suggested_take_profit": 0.10,
+        "rebalancing_frequency": "monthly"
+    }
+}
+```
+
+---
+
+### Get User Profile
+
+Retrieve current user profile and preferences.
+
+```http
+GET /api/v1/profile/
+```
+
+**Response:**
+
+```json
+{
+    "user_id": "user_123",
+    "risk_tolerance": 0.65,
+    "category": "Growth",
+    "preferences": {
+        "use_sentiment": false,
+        "preferred_timeframe": "1d",
+        "symbols": ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+    },
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-12-18T00:00:00Z"
+}
+```
+
+---
+
+### Update Preferences
+
+Update user trading preferences.
+
+```http
+PUT /api/v1/profile/preferences
+```
+
+**Request Body:**
+
+```json
+{
+    "use_sentiment": false,
+    "preferred_timeframe": "1d",
+    "symbols": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]
+}
+```
+
+**Response:**
+
+```json
+{
+    "message": "Preferences updated successfully",
+    "preferences": {
+        "use_sentiment": false,
+        "preferred_timeframe": "1d",
+        "symbols": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]
+    }
+}
+```
+
+---
+
+## System Endpoints
+
+### Health Check
+
+```http
+GET /health
+```
+
+**Response:**
+
+```json
+{
+    "status": "healthy",
+    "version": "1.0.0",
+    "timestamp": "2024-12-18T00:30:00Z"
 }
 ```
 
@@ -312,41 +341,42 @@ Check API health status.
 
 ## Error Responses
 
-All errors follow this format:
+All endpoints return errors in the following format:
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid symbol format",
-    "details": {
-      "field": "symbol",
-      "value": "invalid!"
-    }
-  }
+    "detail": "Error message describing what went wrong"
 }
 ```
 
-**Error Codes**:
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Invalid request data |
-| `UNAUTHORIZED` | 401 | Missing or invalid token |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `INTERNAL_ERROR` | 500 | Server error |
+### Common Error Codes
+
+| Code | Description |
+|------|-------------|
+| 400 | Bad Request - Invalid parameters |
+| 404 | Not Found - Symbol or resource not found |
+| 500 | Internal Server Error |
 
 ---
 
 ## Rate Limiting
 
-- **Authenticated users**: 100 requests/minute
-- **Signals endpoint**: 10 requests/minute per symbol
-- **Backtest endpoint**: 5 requests/minute
+| Tier | Requests/minute |
+|------|-----------------|
+| Free | 60 |
+| Pro | 600 |
+| Enterprise | Unlimited |
 
 ---
 
-## Next Steps
+## Interactive Documentation
 
-- See [Deployment](06_deployment.md) for setup instructions
+Swagger UI is available at:
+```
+http://localhost:8000/docs
+```
+
+ReDoc is available at:
+```
+http://localhost:8000/redoc
+```

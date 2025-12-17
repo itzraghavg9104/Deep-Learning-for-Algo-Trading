@@ -1,294 +1,371 @@
 # Trader Behavior Module
 
+> Personalized trading strategies based on individual risk tolerance
+
 ## Overview
 
-This is the **unique selling proposition (USP)** of our system. Unlike traditional algo trading systems that ignore the human element, our platform adapts to individual trader psychology and risk preferences.
+The Trader Behavior Module is our **USP (Unique Selling Proposition)**. Unlike traditional algorithmic trading systems that use fixed parameters, our system:
+
+1. **Profiles individual risk tolerance** through a questionnaire
+2. **Adjusts position sizes** based on risk profile
+3. **Tracks break-even points** for each position
+4. **Personalizes trading recommendations**
 
 ---
 
-## The Human Element in Trading
+## Module Architecture
 
-Professional traders exhibit specific behaviors:
-
-| Behavior | Description | Our Solution |
-|----------|-------------|--------------|
-| **Risk Tolerance** | How much loss can they stomach? | Personalized position sizing |
-| **Loss Aversion** | Prefer avoiding losses over gains | Adaptive stop-loss levels |
-| **Overconfidence** | Overestimate abilities | Conservative guardrails |
-| **Time Horizon** | Short-term vs long-term focus | Timeframe-adjusted signals |
-| **Break-Even Fixation** | Psychological price levels | Break-even tracking |
+```mermaid
+graph TB
+    subgraph "Risk Assessment"
+        A[User Questionnaire] --> B[Risk Scoring<br/>0.0 - 1.0]
+        B --> C{Risk Category}
+    end
+    
+    C -->|0.0-0.3| D[Conservative]
+    C -->|0.3-0.5| E[Moderate]
+    C -->|0.5-0.7| F[Growth]
+    C -->|0.7-1.0| G[Aggressive]
+    
+    subgraph "Position Sizing"
+        D --> H[Small Positions<br/>2-5% of capital]
+        E --> I[Medium Positions<br/>5-10% of capital]
+        F --> J[Large Positions<br/>10-15% of capital]
+        G --> K[Max Positions<br/>15-25% of capital]
+    end
+    
+    subgraph "Risk Management"
+        H --> L[Break-Even Tracker]
+        I --> L
+        J --> L
+        K --> L
+        L --> M[P&L Monitoring]
+        M --> N[Stop-Loss Triggers]
+    end
+```
 
 ---
 
-## Components
+## Risk Profiler
 
-### 1. Risk Profiler
+### Implementation
 
-**Purpose**: Assess trader's risk tolerance through an interactive questionnaire
+**File:** [`risk_profiler.py`](file:///d:/Major%20Project/backend/app/trader_behavior/risk_profiler.py)
 
-**Questionnaire Categories**:
+### Questionnaire Structure
 
-#### Investment Experience
-```
-Q1: How many years of trading experience do you have?
-    a) 0-1 years (1 point)
-    b) 1-3 years (2 points)
-    c) 3-5 years (3 points)
-    d) 5+ years (4 points)
-```
+The risk assessment consists of 10 questions across 4 categories:
 
-#### Loss Tolerance
-```
-Q2: If your portfolio dropped 20% in a week, you would:
-    a) Panic sell everything (1 point)
-    b) Sell some positions (2 points)
-    c) Hold and wait (3 points)
-    d) Buy more at lower prices (4 points)
-```
+| Category | Questions | Weight |
+|----------|-----------|--------|
+| Investment Horizon | 2 | 25% |
+| Loss Tolerance | 3 | 30% |
+| Income Stability | 2 | 20% |
+| Experience Level | 3 | 25% |
 
-#### Time Horizon
-```
-Q3: What is your typical holding period?
-    a) Intraday (1 point)
-    b) Days to weeks (2 points)
-    c) Weeks to months (3 points)
-    d) Months to years (4 points)
-```
+### Sample Questions
 
-#### Risk Preferences
-```
-Q4: Choose your preferred scenario:
-    a) Guaranteed 5% annual return (1 point)
-    b) 50% chance of 15% or 0% return (2 points)
-    c) 50% chance of 25% or -10% return (3 points)
-    d) 50% chance of 50% or -30% return (4 points)
-```
-
-**Scoring**:
 ```python
-def calculate_risk_score(answers: List[int]) -> float:
+RISK_QUESTIONS = [
+    {
+        "id": 1,
+        "category": "investment_horizon",
+        "question": "What is your investment time horizon?",
+        "options": [
+            {"value": 1, "label": "Less than 1 year"},
+            {"value": 2, "label": "1-3 years"},
+            {"value": 3, "label": "3-5 years"},
+            {"value": 4, "label": "5-10 years"},
+            {"value": 5, "label": "More than 10 years"}
+        ]
+    },
+    {
+        "id": 2,
+        "category": "loss_tolerance",
+        "question": "How would you react if your portfolio dropped 20%?",
+        "options": [
+            {"value": 1, "label": "Sell everything immediately"},
+            {"value": 2, "label": "Sell some holdings"},
+            {"value": 3, "label": "Hold and wait"},
+            {"value": 4, "label": "Buy more at lower prices"},
+            {"value": 5, "label": "Significantly increase position"}
+        ]
+    }
+    # ... more questions
+]
+```
+
+### Risk Score Calculation
+
+```python
+def calculate_risk_tolerance(answers: List[int]) -> float:
     """
-    Calculate normalized risk tolerance score.
+    Calculate normalized risk tolerance from questionnaire answers.
+    
+    Args:
+        answers: List of answer values (1-5)
     
     Returns:
-        float: Risk tolerance [0.0 (conservative) to 1.0 (aggressive)]
+        Risk tolerance score (0.0 - 1.0)
     """
-    total_points = sum(answers)
-    max_points = 4 * len(answers)
-    risk_score = (total_points - len(answers)) / (max_points - len(answers))
-    return round(risk_score, 2)
+    weights = [0.1, 0.15, 0.1, 0.15, 0.1, 0.1, 0.1, 0.05, 0.1, 0.05]
+    
+    weighted_sum = sum(a * w for a, w in zip(answers, weights))
+    max_score = sum(5 * w for w in weights)
+    
+    return weighted_sum / max_score
 ```
 
-**Risk Categories**:
-| Score | Category | Description |
-|-------|----------|-------------|
-| 0.0 - 0.25 | Conservative | Capital preservation priority |
-| 0.25 - 0.50 | Moderate | Balanced risk/reward |
-| 0.50 - 0.75 | Growth | Accepts volatility for growth |
-| 0.75 - 1.0 | Aggressive | High risk tolerance |
+### Risk Categories
+
+| Score Range | Category | Description |
+|-------------|----------|-------------|
+| 0.0 - 0.3 | **Conservative** | Capital preservation focus |
+| 0.3 - 0.5 | **Moderate** | Balanced growth and safety |
+| 0.5 - 0.7 | **Growth** | Higher returns, accepts volatility |
+| 0.7 - 1.0 | **Aggressive** | Maximum growth, high risk tolerance |
 
 ---
 
-### 2. Position Sizer
+## Position Sizer
 
-**Purpose**: Calculate optimal position size based on risk tolerance
+### Implementation
 
-**Methods**:
+**File:** [`position_sizer.py`](file:///d:/Major%20Project/backend/app/trader_behavior/position_sizer.py)
 
-#### Fixed Percentage
-```python
-def fixed_percentage_size(portfolio_value: float, risk_pct: float) -> float:
-    """
-    Simple fixed percentage of portfolio.
+### Sizing Algorithms
+
+```mermaid
+graph TB
+    A[Position Sizer] --> B[Fixed Percentage]
+    A --> C[Kelly Criterion]
+    A --> D[Volatility-Adjusted]
     
-    Example: 5% per trade for conservative, 15% for aggressive
-    """
-    return portfolio_value * risk_pct
+    B --> E["position = capital × fixed_pct"]
+    C --> F["position = capital × kelly_fraction"]
+    D --> G["position = capital × base_pct / volatility"]
 ```
 
-#### Kelly Criterion
+### 1. Fixed Percentage
+
+Simple fixed percentage of capital:
+
 ```python
-def kelly_criterion_size(
+def fixed_percentage(capital: float, risk_tolerance: float) -> float:
+    base_pct = 0.02 + (risk_tolerance * 0.08)  # 2% to 10%
+    return capital * base_pct
+```
+
+### 2. Kelly Criterion
+
+Optimal position size for maximum growth:
+
+```python
+def kelly_criterion(
     win_rate: float,
     avg_win: float,
     avg_loss: float,
-    portfolio_value: float,
+    capital: float,
     risk_tolerance: float
 ) -> float:
     """
-    Kelly Criterion for optimal position sizing.
-    
-    f* = (bp - q) / b
+    Kelly Criterion: f* = (bp - q) / b
     where:
-        b = odds received on the bet (avg_win / avg_loss)
-        p = probability of winning
-        q = probability of losing (1 - p)
-    
-    Adjusted by risk_tolerance factor (0.5 Kelly is common for safety)
+        b = avg_win / avg_loss (odds)
+        p = win_rate
+        q = 1 - p (loss rate)
     """
-    if avg_loss == 0:
-        return 0
-    
-    b = avg_win / abs(avg_loss)
+    b = avg_win / avg_loss
     p = win_rate
     q = 1 - p
     
-    kelly_fraction = (b * p - q) / b
-    kelly_fraction = max(0, min(kelly_fraction, 1))  # Clamp to [0, 1]
+    kelly = (b * p - q) / b
     
-    # Apply risk tolerance modifier (conservative = 0.25x, aggressive = 1.0x)
-    adjusted_fraction = kelly_fraction * (0.25 + 0.75 * risk_tolerance)
+    # Apply half-Kelly for safety, adjusted by risk tolerance
+    fraction = kelly * 0.5 * risk_tolerance
     
-    return portfolio_value * adjusted_fraction
+    return capital * max(0, min(fraction, 0.25))  # Cap at 25%
 ```
 
-#### Volatility-Adjusted
+### 3. Volatility-Adjusted
+
+Position size inversely proportional to volatility:
+
 ```python
-def volatility_adjusted_size(
-    portfolio_value: float,
-    atr: float,
-    current_price: float,
+def volatility_adjusted(
+    capital: float,
+    volatility: float,
+    target_risk: float,
     risk_tolerance: float
 ) -> float:
     """
-    Adjust position size based on market volatility.
-    
+    Adjust position size based on asset volatility.
     Higher volatility = smaller position
     """
-    atr_pct = atr / current_price
-    base_size = portfolio_value * 0.1  # 10% base
+    base_position = capital * target_risk * risk_tolerance
+    adjusted = base_position / (volatility / 0.02)  # Normalize to 2% vol
     
-    # Inverse relationship with volatility
-    vol_multiplier = 1 / (1 + atr_pct * 10)
-    
-    # Apply risk tolerance
-    size = base_size * vol_multiplier * (0.5 + risk_tolerance * 0.5)
-    
-    return min(size, portfolio_value * 0.25)  # Cap at 25%
+    return min(adjusted, capital * 0.25)
 ```
 
 ---
 
-### 3. Break-Even Tracker
+## Break-Even Tracker
 
-**Purpose**: Track psychological price levels and P&L status
+### Implementation
 
-**Features**:
-- Entry price tracking (with averaging for multiple entries)
-- Real-time unrealized P&L
-- Break-even distance alerts
-- Psychological level notifications
+**File:** [`breakeven_tracker.py`](file:///d:/Major%20Project/backend/app/trader_behavior/breakeven_tracker.py)
 
-```python
-class BreakevenTracker:
-    def __init__(self):
-        self.positions = {}  # symbol -> PositionInfo
+### Position Tracking
+
+```mermaid
+stateDiagram-v2
+    [*] --> NewPosition: Open Trade
     
-    def update_position(self, symbol: str, action: str, price: float, quantity: float):
-        if symbol not in self.positions:
-            self.positions[symbol] = PositionInfo(symbol)
-        
-        pos = self.positions[symbol]
-        
-        if action == "BUY":
-            # Weighted average entry price
-            total_cost = pos.avg_entry * pos.quantity + price * quantity
-            pos.quantity += quantity
-            pos.avg_entry = total_cost / pos.quantity
-        
-        elif action == "SELL":
-            pos.quantity -= quantity
-            if pos.quantity <= 0:
-                pos.reset()
+    NewPosition --> InProfit: Price > Entry
+    NewPosition --> InLoss: Price < Entry
     
-    def get_pnl(self, symbol: str, current_price: float) -> dict:
-        pos = self.positions.get(symbol)
-        if not pos or pos.quantity == 0:
-            return {"pnl_pct": 0, "pnl_abs": 0, "distance_to_breakeven": 0}
-        
-        pnl_abs = (current_price - pos.avg_entry) * pos.quantity
-        pnl_pct = (current_price - pos.avg_entry) / pos.avg_entry * 100
-        distance = (current_price - pos.avg_entry) / pos.avg_entry * 100
-        
-        return {
-            "pnl_pct": round(pnl_pct, 2),
-            "pnl_abs": round(pnl_abs, 2),
-            "breakeven_price": pos.avg_entry,
-            "distance_to_breakeven": round(distance, 2)
-        }
+    InProfit --> BreakEven: Take Partial Profit
+    InLoss --> StopLoss: Hit Stop-Loss
+    
+    BreakEven --> InProfit: Price Rises
+    BreakEven --> InLoss: Price Falls
+    
+    InProfit --> Closed: Take Profit
+    StopLoss --> Closed: Exit
+    
+    Closed --> [*]
 ```
 
----
-
-### 4. Timeframe Analyzer
-
-**Purpose**: Adjust signals based on preferred trading timeframe
-
-| Timeframe | Signal Adjustment |
-|-----------|-------------------|
-| Intraday | Higher weight on momentum indicators |
-| Swing (days) | Balance of trend + momentum |
-| Position (weeks) | Higher weight on trend indicators |
-| Long-term (months) | Fundamentals + macro sentiment |
+### Key Functions
 
 ```python
-def adjust_state_for_timeframe(state: dict, timeframe: str) -> dict:
+class BreakEvenTracker:
+    def add_position(self, symbol: str, quantity: int, price: float):
+        """Add a new position or add to existing."""
+        
+    def update_price(self, symbol: str, current_price: float) -> dict:
+        """Update P&L for a position."""
+        
+    def get_break_even_price(self, symbol: str) -> float:
+        """Calculate break-even price including commissions."""
+        
+    def close_position(self, symbol: str, quantity: int, price: float) -> dict:
+        """Close position and calculate realized P&L."""
+```
+
+### Break-Even Calculation
+
+```python
+def calculate_break_even(
+    avg_entry_price: float,
+    quantity: int,
+    commission_pct: float = 0.001
+) -> float:
     """
-    Re-weight state features based on trader's preferred timeframe.
+    Break-even price including round-trip commissions.
+    
+    Formula: BE = entry × (1 + 2×commission)
     """
-    weights = {
-        "intraday": {"momentum": 1.5, "trend": 0.7, "sentiment": 1.0},
-        "swing": {"momentum": 1.0, "trend": 1.0, "sentiment": 1.0},
-        "position": {"momentum": 0.7, "trend": 1.5, "sentiment": 0.8},
-        "longterm": {"momentum": 0.5, "trend": 1.2, "sentiment": 1.3},
-    }
-    
-    w = weights.get(timeframe, weights["swing"])
-    
-    # Apply weights to indicator groups
-    adjusted = state.copy()
-    for key in ["rsi", "stochastic", "cci"]:
-        if key in adjusted:
-            adjusted[key] *= w["momentum"]
-    for key in ["macd", "adx", "sma_trend"]:
-        if key in adjusted:
-            adjusted[key] *= w["trend"]
-    
-    return adjusted
+    total_commission = 2 * commission_pct  # Buy + Sell
+    break_even = avg_entry_price * (1 + total_commission)
+    return break_even
 ```
 
 ---
 
-## Integration with DRL Agent
+## Integration with PPO Agent
 
-The Trader Behavior module contributes to the state vector:
+The trader behavior module integrates with the PPO agent through the state vector:
 
 ```python
-trader_state = {
-    "risk_tolerance": 0.65,           # From questionnaire
-    "preferred_timeframe": 2,          # Encoded (0=intra, 1=swing, 2=position)
-    "current_position": 100,           # Shares held
-    "breakeven_price": 150.25,         # Average entry
-    "unrealized_pnl_pct": 3.5,         # Current P&L %
+# State includes trader profile
+state = np.concatenate([
+    price_features,
+    indicator_features,
+    np.array([
+        risk_tolerance,           # From risk profiler
+        position_size_fraction,   # From position sizer
+        distance_to_break_even,   # From break-even tracker
+    ])
+])
+```
+
+This allows the agent to make **personalized decisions** based on individual trader characteristics.
+
+---
+
+## API Endpoints
+
+### Risk Assessment
+
+```http
+POST /api/v1/profile/risk-assessment
+Content-Type: application/json
+
+{
+    "answers": [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
 }
 ```
 
-This allows the PPO agent to learn policies that respect individual trader preferences.
+**Response:**
+```json
+{
+    "risk_tolerance": 0.65,
+    "category": "Growth",
+    "recommendations": {
+        "max_position_size": 0.15,
+        "suggested_stop_loss": 0.05,
+        "suggested_take_profit": 0.10
+    }
+}
+```
+
+### Update Preferences
+
+```http
+PUT /api/v1/profile/preferences
+Content-Type: application/json
+
+{
+    "use_sentiment": false,
+    "preferred_timeframe": "1d",
+    "risk_tolerance": 0.65
+}
+```
 
 ---
 
-## Implementation Files
+## Example Usage
 
-| File | Purpose |
-|------|---------|
-| `risk_profiler.py` | Questionnaire and scoring |
-| `position_sizer.py` | Position sizing algorithms |
-| `breakeven_tracker.py` | P&L and break-even tracking |
-| `timeframe_analyzer.py` | Timeframe-based adjustments |
+```python
+from app.trader_behavior import (
+    RiskProfiler,
+    PositionSizer,
+    BreakEvenTracker
+)
 
----
+# 1. Profile the trader
+profiler = RiskProfiler()
+answers = [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
+risk_tolerance = profiler.calculate(answers)
+print(f"Risk Tolerance: {risk_tolerance:.2f}")
+# Output: Risk Tolerance: 0.65
 
-## Next Steps
+# 2. Calculate position size
+sizer = PositionSizer(capital=100000, risk_tolerance=risk_tolerance)
+position = sizer.kelly_criterion(
+    win_rate=0.55,
+    avg_win=0.03,
+    avg_loss=0.02
+)
+print(f"Suggested Position: ₹{position:,.2f}")
+# Output: Suggested Position: ₹15,000.00
 
-- See [API Reference](05_api_reference.md) for endpoint details
-- See [Deployment](06_deployment.md) for setup instructions
+# 3. Track break-even
+tracker = BreakEvenTracker()
+tracker.add_position("RELIANCE.NS", 10, 1500.00)
+be_price = tracker.get_break_even_price("RELIANCE.NS")
+print(f"Break-Even Price: ₹{be_price:.2f}")
+# Output: Break-Even Price: ₹1503.00
+```

@@ -1,217 +1,251 @@
-# Layer 1: Data Processing Pipeline
+# Data Processing Layer (Layer 1)
+
+> Market data fetching, technical indicators, and LSTM-based price prediction
 
 ## Overview
 
-Layer 1 is the "Analysis" component that processes raw market data into a comprehensive state representation, mimicking how a professional trader gathers and synthesizes information.
+Layer 1 is responsible for:
+1. **Fetching market data** from NSE/BSE via yfinance
+2. **Computing technical indicators** (30+ indicators)
+3. **Predicting future prices** using trained LSTM model
+4. **Building state vectors** for the PPO agent
 
 ---
 
-## Components
+## Data Flow
 
-### 1. DeepAR-Attention Model
-
-**Purpose**: Probabilistic price forecasting with uncertainty quantification
-
-**Why DeepAR?**
-- Outputs a **distribution** (mean μ, std σ) instead of a single point
-- Allows risk-adjusted decision making
-- Attention mechanism highlights important time steps
-
-**Architecture**:
+```mermaid
+graph LR
+    A[NSE/BSE] -->|yfinance| B[OHLCV Data]
+    B --> C[Technical Indicators]
+    B --> D[LSTM Model]
+    C --> E[State Builder]
+    D --> E
+    E --> F[Normalized Vector]
+    F --> G[PPO Agent]
 ```
-Input: [price_t-n, ..., price_t] (lookback window)
-    ↓
-LSTM Encoder (hidden_size=128)
-    ↓
-Attention Layer
-    ↓
-Output: μ(t+1), σ(t+1), attention_weights
-```
-
-**Key Outputs**:
-| Output | Description |
-|--------|-------------|
-| `price_mean` | Expected price at t+1 |
-| `price_std` | Uncertainty in prediction |
-| `price_change_pct` | Relative change (for robustness) |
-| `attention_weights` | Which past timesteps matter most |
 
 ---
 
-### 2. Technical Indicators (30+)
+## Market Data Module
 
-**Purpose**: Capture market patterns and momentum
+### Implementation
 
-**Indicator Categories**:
-
-#### Trend Indicators
-| Indicator | Window | Description |
-|-----------|--------|-------------|
-| SMA | 20, 50, 200 | Simple Moving Average |
-| EMA | 12, 26 | Exponential Moving Average |
-| MACD | 12, 26, 9 | Moving Average Convergence Divergence |
-| ADX | 14 | Average Directional Index |
-| Parabolic SAR | - | Stop and Reverse |
-
-#### Momentum Indicators
-| Indicator | Window | Range |
-|-----------|--------|-------|
-| RSI | 14 | 0-100 |
-| Stochastic %K | 14 | 0-100 |
-| Stochastic %D | 3 | 0-100 |
-| CCI | 20 | Unbounded |
-| Williams %R | 14 | -100 to 0 |
-| ROC | 10 | Percentage |
-
-#### Volatility Indicators
-| Indicator | Window | Description |
-|-----------|--------|-------------|
-| Bollinger Upper | 20, 2σ | Upper band |
-| Bollinger Lower | 20, 2σ | Lower band |
-| Bollinger %B | 20 | Position within bands |
-| ATR | 14 | Average True Range |
-| Keltner Upper | 20 | Upper channel |
-| Keltner Lower | 20 | Lower channel |
-
-#### Volume Indicators
-| Indicator | Description |
-|-----------|-------------|
-| OBV | On-Balance Volume |
-| VWAP | Volume Weighted Average Price |
-| MFI | Money Flow Index |
-| CMF | Chaikin Money Flow |
-| Volume SMA | Volume moving average |
-
-**Normalization**: All indicators are normalized to [-1, 1] or [0, 1] for neural network input.
-
----
-
-### 3. FinBERT Sentiment Analysis
-
-**Purpose**: Assess market sentiment from financial news
-
-**Model**: `ProsusAI/finbert` (pre-trained on financial text)
-
-**Pipeline**:
-```
-News Headlines → Tokenizer → FinBERT → Softmax → Sentiment Score
-```
-
-**Output**:
-| Output | Range | Description |
-|--------|-------|-------------|
-| `sentiment_score` | [-1, 1] | Negative to Positive |
-| `sentiment_confidence` | [0, 1] | Model confidence |
-
-**Aggregation**: Multiple headlines are aggregated using confidence-weighted average.
-
----
-
-### 4. State Builder
-
-**Purpose**: Combine all features into a unified state vector
-
-**State Vector Structure**:
-```python
-state = {
-    # DeepAR Outputs (4 features)
-    "price_mean": float,
-    "price_std": float,
-    "price_change_pct": float,
-    "prediction_confidence": float,
-    
-    # Technical Indicators (30+ features)
-    "rsi_14": float,
-    "macd_line": float,
-    "macd_signal": float,
-    "macd_histogram": float,
-    "bollinger_pct_b": float,
-    "atr_normalized": float,
-    # ... 25+ more
-    
-    # Sentiment (2 features)
-    "news_sentiment": float,
-    "sentiment_confidence": float,
-    
-    # Trader Behavior (5 features)
-    "risk_tolerance": float,
-    "preferred_timeframe": int,
-    "current_position": float,
-    "breakeven_price": float,
-    "unrealized_pnl_pct": float,
-    
-    # Portfolio State (3 features)
-    "cash_ratio": float,
-    "position_value": float,
-    "total_portfolio_value": float,
-}
-```
-
-**Total Dimensions**: ~50 features
-
----
-
-## Data Sources
-
-| Source | Data Type | Update Frequency | Notes |
-|--------|-----------|------------------|-------|
-| **NSEpy** | NSE OHLCV | Daily | Primary for NSE stocks |
-| **yfinance** | NSE/BSE OHLCV | Daily / 15-min | Use `.NS` suffix (e.g., `RELIANCE.NS`) |
-| **NewsAPI** | Headlines | On-demand | **Optional** - User configurable |
-| User Profile | Behavior | On-change | Risk preferences |
-
-### Indian Market Stock Symbols
+**File:** [`market_data.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/market_data.py)
 
 ```python
-# NSE stocks use .NS suffix
-nse_symbols = [
-    "RELIANCE.NS",   # Reliance Industries
-    "TCS.NS",        # TCS
-    "INFY.NS",       # Infosys
-    "HDFCBANK.NS",   # HDFC Bank
-    "ICICIBANK.NS",  # ICICI Bank
-    "SBIN.NS",       # State Bank of India
-    "BHARTIARTL.NS", # Bharti Airtel
-    "ITC.NS",        # ITC
-    "KOTAKBANK.NS",  # Kotak Mahindra Bank
-    "LT.NS",         # Larsen & Toubro
-]
-
-# BSE stocks use .BO suffix
-bse_symbols = ["RELIANCE.BO", "TCS.BO"]
+# Key functions
+async def get_market_data(symbol: str, period: str = "1mo") -> pd.DataFrame
+def fetch_market_data_sync(symbol: str, period: str = "1mo") -> pd.DataFrame
 ```
 
-### Optional Sentiment Configuration
+### Supported Exchanges
+
+| Exchange | Symbol Suffix | Example |
+|----------|---------------|---------|
+| NSE | `.NS` | `RELIANCE.NS` |
+| BSE | `.BO` | `RELIANCE.BO` |
+
+### NIFTY 50 Stocks
+
+The system supports all NIFTY 50 constituents including:
+- RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK
+- SBIN, BHARTIARTL, ITC, KOTAKBANK, LT
+- HINDUNILVR, AXISBANK, BAJFINANCE, MARUTI, ASIANPAINT
+- And 5 more...
+
+---
+
+## Technical Indicators
+
+### Implementation
+
+**File:** [`technical_indicators.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/technical_indicators.py)
+
+### Indicator Categories
+
+```mermaid
+mindmap
+  root((Technical Indicators))
+    Trend
+      SMA 20/50
+      EMA 12/26
+      MACD
+      ADX
+    Momentum
+      RSI
+      Stochastic
+      Williams %R
+      ROC
+    Volatility
+      Bollinger Bands
+      ATR
+      Standard Deviation
+    Volume
+      OBV
+      VWAP
+      Volume SMA
+    Price Action
+      Pivot Points
+      Support/Resistance
+```
+
+### Full Indicator List (30+)
+
+| Category | Indicators |
+|----------|------------|
+| **Moving Averages** | SMA_20, SMA_50, EMA_12, EMA_26 |
+| **MACD** | MACD, MACD_Signal, MACD_Hist |
+| **RSI** | RSI_14 |
+| **Bollinger Bands** | BB_Upper, BB_Middle, BB_Lower, BB_Width |
+| **Stochastic** | STOCH_K, STOCH_D |
+| **ADX** | ADX, DI_Plus, DI_Minus |
+| **ATR** | ATR |
+| **OBV** | OBV |
+| **Williams %R** | WILLR |
+| **ROC** | ROC |
+
+---
+
+## LSTM Price Predictor
+
+### Architecture
+
+```mermaid
+graph TB
+    A[Input Sequence<br/>30 days × 5 features] --> B[LSTM Layer 1<br/>64 hidden units]
+    B --> C[LSTM Layer 2<br/>64 hidden units]
+    C --> D[Dropout 0.2]
+    D --> E[Linear 64→32]
+    E --> F[ReLU]
+    F --> G[Dropout 0.2]
+    G --> H[Linear 32→1]
+    H --> I[Predicted Price]
+```
+
+### Training Details
+
+| Parameter | Value |
+|-----------|-------|
+| Input Features | Open, High, Low, Close, Volume |
+| Sequence Length | 30 days |
+| Hidden Size | 64 |
+| LSTM Layers | 2 |
+| Dropout | 0.2 |
+| Optimizer | Adam |
+| Learning Rate | 0.001 |
+| Epochs | 30 |
+
+### Training Results
+
+| Metric | Value |
+|--------|-------|
+| Training Samples | 23,167 |
+| Validation Samples | 5,792 |
+| **Best Val Loss** | **0.000228** |
+| Training Time | ~3 minutes |
+
+### Training Script
+
+**File:** [`training/train_lstm.py`](file:///d:/Major%20Project/backend/training/train_lstm.py)
+
+```bash
+# To train the model
+cd backend
+.\venv\Scripts\python training\train_lstm.py
+```
+
+---
+
+## State Builder
+
+### Implementation
+
+**File:** [`state_builder.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/state_builder.py)
+
+### State Vector Components
+
+```mermaid
+graph TB
+    subgraph "Input Features"
+        A[OHLCV Data]
+        B[Technical Indicators]
+        C[Trader Profile]
+        D[Portfolio State]
+    end
+    
+    subgraph "Processing"
+        A --> E[Normalize]
+        B --> E
+        C --> E
+        D --> E
+    end
+    
+    subgraph "Output"
+        E --> F[State Vector<br/>~50 dimensions]
+        F --> G[PPO Agent]
+    end
+```
+
+### Normalization
+
+All features are normalized to [0, 1] range using:
+- **MinMax Scaling** for prices and volumes
+- **Z-Score Normalization** for returns
+- **Raw values** for bounded indicators (RSI, etc.)
+
+---
+
+## Usage Example
 
 ```python
-# User can enable/disable sentiment in their profile
-user_config = {
-    "use_sentiment": True,  # Toggle sentiment analysis
-    "news_api_key": "...",  # Required only if use_sentiment=True
-}
+from app.layer1_data_processing import (
+    get_market_data,
+    compute_indicators,
+    StateBuilder
+)
 
-# State builder respects this setting
-if user_config["use_sentiment"]:
-    state["news_sentiment"] = get_finbert_score(headlines)
-else:
-    state["news_sentiment"] = 0.0  # Neutral default
+# Fetch data
+data = await get_market_data("RELIANCE.NS", period="3mo")
+
+# Compute indicators
+indicators = compute_indicators(data)
+
+# Build state for PPO
+state_builder = StateBuilder()
+state = state_builder.build_state(
+    data=data,
+    indicators=indicators,
+    risk_tolerance=0.5,
+    portfolio_value=100000
+)
+
+print(f"State shape: {state.shape}")  # (50,)
 ```
 
 ---
 
-## Implementation Files
+## API Integration
 
-| File | Purpose |
-|------|---------|
-| `deepar_attention.py` | DeepAR model definition and inference |
-| `bilstm_encoder.py` | BiLSTM feature encoder |
-| `technical_indicators.py` | pandas-ta indicator computation |
-| `finbert_sentiment.py` | FinBERT wrapper and aggregation |
-| `state_builder.py` | Combines all into state vector |
+The prediction service integrates Layer 1 outputs with the API:
 
----
+**File:** [`services/prediction_service.py`](file:///d:/Major%20Project/backend/app/services/prediction_service.py)
 
-## Next Steps
+```python
+from app.services.prediction_service import get_prediction_service
 
-- See [Decision Engine](03_decision_engine.md) for how the state is used
-- See [Trader Behavior](04_trader_behavior.md) for behavior modeling details
+service = get_prediction_service()
+prediction = service.predict("RELIANCE.NS")
+
+# Returns:
+# {
+#     "symbol": "RELIANCE.NS",
+#     "current_price": 1544.40,
+#     "predicted_price": 1560.25,
+#     "price_change": 15.85,
+#     "change_pct": 1.03,
+#     "action": "BUY",
+#     "confidence": 0.72,
+#     "model": "LSTM"
+# }
+```
