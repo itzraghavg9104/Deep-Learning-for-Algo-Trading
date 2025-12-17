@@ -13,31 +13,14 @@ Layer 2 is the **Decision Engine** that uses a trained PPO (Proximal Policy Opti
 
 ## PPO Agent Architecture
 
-```mermaid
-graph TB
-    subgraph "Environment"
-        A[State Vector] --> B[Trading Environment]
-        B --> C[Reward]
-        B --> D[Next State]
-        B --> E[Done Flag]
-    end
-    
-    subgraph "PPO Agent"
-        A --> F[Policy Network<br/>Actor]
-        A --> G[Value Network<br/>Critic]
-        F --> H{Action}
-        G --> I[Value Estimate]
-    end
-    
-    H -->|0| J[HOLD]
-    H -->|1| K[BUY]
-    H -->|2| L[SELL]
-    
-    C --> M[Advantage<br/>Estimation]
-    I --> M
-    M --> N[Policy Update]
-    N --> F
-```
+![PPO Training Workflow](images/ppo_training.png)
+
+The PPO agent operates in a continuous loop:
+1. **Observe** the current market state
+2. **Decide** on an action (BUY/SELL/HOLD)
+3. **Execute** the trade in the environment
+4. **Receive** reward based on Sharpe Ratio
+5. **Learn** to improve future decisions
 
 ---
 
@@ -45,7 +28,7 @@ graph TB
 
 ### Implementation
 
-**File:** [`trading_env.py`](file:///d:/Major%20Project/backend/app/layer2_decision/trading_env.py)
+**File:** [`trading_env.py`](../backend/app/layer2_decision/trading_env.py)
 
 ### Environment Specification
 
@@ -68,55 +51,19 @@ graph TB
 #    - Unrealized P&L
 ```
 
-### Action Execution
-
-```mermaid
-stateDiagram-v2
-    [*] --> Evaluate
-    Evaluate --> BUY: action=1
-    Evaluate --> SELL: action=2
-    Evaluate --> HOLD: action=0
-    
-    BUY --> CheckBalance
-    CheckBalance --> ExecuteBuy: balance >= cost
-    CheckBalance --> HOLD: insufficient funds
-    
-    SELL --> CheckShares
-    CheckShares --> ExecuteSell: shares > 0
-    CheckShares --> HOLD: no shares
-    
-    ExecuteBuy --> UpdatePortfolio
-    ExecuteSell --> UpdatePortfolio
-    HOLD --> UpdatePortfolio
-    
-    UpdatePortfolio --> CalculateReward
-    CalculateReward --> [*]
-```
-
 ---
 
 ## Reward Function
 
 ### Sharpe Ratio Optimization
 
-**File:** [`reward_function.py`](file:///d:/Major%20Project/backend/app/layer2_decision/reward_function.py)
+**File:** [`reward_function.py`](../backend/app/layer2_decision/reward_function.py)
 
 The reward function optimizes for **risk-adjusted returns** using a Sharpe-like metric:
 
 ```python
 # Reward calculation
 reward = mean(returns[-20:]) / std(returns[-20:])
-```
-
-### Reward Components
-
-```mermaid
-graph LR
-    A[Portfolio Return] --> B[Rolling Mean<br/>Last 20 steps]
-    A --> C[Rolling Std<br/>Last 20 steps]
-    B --> D[Sharpe Ratio]
-    C --> D
-    D --> E[Clipped Reward]
 ```
 
 ### Why Sharpe Ratio?
@@ -133,9 +80,13 @@ We chose Sharpe Ratio for balanced risk-reward optimization.
 
 ## PPO Training
 
+### Training Pipeline
+
+![Training Pipeline](images/training_pipeline.png)
+
 ### Training Script
 
-**File:** [`training/train_ppo.py`](file:///d:/Major%20Project/backend/training/train_ppo.py)
+**File:** [`training/train_ppo.py`](../backend/training/train_ppo.py)
 
 ### Hyperparameters
 
@@ -168,7 +119,7 @@ cd backend
 .\venv\Scripts\python training\train_ppo.py
 ```
 
-### Training Progress
+### Training Output
 
 ```
 ==================================================
@@ -245,17 +196,3 @@ async def get_trading_signal(symbol: str):
         "prediction": prediction
     }
 ```
-
----
-
-## Performance Comparison
-
-```mermaid
-xychart-beta
-    title "Strategy Performance Comparison"
-    x-axis ["Buy & Hold", "Random", "LSTM Only", "PPO Agent"]
-    y-axis "Return (%)" 0 --> 150
-    bar [45, 12, 78, 132]
-```
-
-The PPO agent significantly outperforms baseline strategies by learning optimal entry/exit points while managing risk.

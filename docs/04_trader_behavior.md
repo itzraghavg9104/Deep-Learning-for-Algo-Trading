@@ -13,36 +13,15 @@ The Trader Behavior Module is our **USP (Unique Selling Proposition)**. Unlike t
 
 ---
 
-## Module Architecture
+## Risk Assessment Flow
 
-```mermaid
-graph TB
-    subgraph "Risk Assessment"
-        A[User Questionnaire] --> B[Risk Scoring<br/>0.0 - 1.0]
-        B --> C{Risk Category}
-    end
-    
-    C -->|0.0-0.3| D[Conservative]
-    C -->|0.3-0.5| E[Moderate]
-    C -->|0.5-0.7| F[Growth]
-    C -->|0.7-1.0| G[Aggressive]
-    
-    subgraph "Position Sizing"
-        D --> H[Small Positions<br/>2-5% of capital]
-        E --> I[Medium Positions<br/>5-10% of capital]
-        F --> J[Large Positions<br/>10-15% of capital]
-        G --> K[Max Positions<br/>15-25% of capital]
-    end
-    
-    subgraph "Risk Management"
-        H --> L[Break-Even Tracker]
-        I --> L
-        J --> L
-        K --> L
-        L --> M[P&L Monitoring]
-        M --> N[Stop-Loss Triggers]
-    end
-```
+![Risk Profiler](images/risk_profiler.png)
+
+The risk assessment process:
+1. User completes 10-question questionnaire
+2. System calculates risk score (0.0 - 1.0)
+3. User is categorized: Conservative, Moderate, Growth, or Aggressive
+4. Position sizing and recommendations are adjusted accordingly
 
 ---
 
@@ -50,7 +29,7 @@ graph TB
 
 ### Implementation
 
-**File:** [`risk_profiler.py`](file:///d:/Major%20Project/backend/app/trader_behavior/risk_profiler.py)
+**File:** [`risk_profiler.py`](../backend/app/trader_behavior/risk_profiler.py)
 
 ### Questionnaire Structure
 
@@ -131,22 +110,11 @@ def calculate_risk_tolerance(answers: List[int]) -> float:
 
 ### Implementation
 
-**File:** [`position_sizer.py`](file:///d:/Major%20Project/backend/app/trader_behavior/position_sizer.py)
+**File:** [`position_sizer.py`](../backend/app/trader_behavior/position_sizer.py)
 
 ### Sizing Algorithms
 
-```mermaid
-graph TB
-    A[Position Sizer] --> B[Fixed Percentage]
-    A --> C[Kelly Criterion]
-    A --> D[Volatility-Adjusted]
-    
-    B --> E["position = capital × fixed_pct"]
-    C --> F["position = capital × kelly_fraction"]
-    D --> G["position = capital × base_pct / volatility"]
-```
-
-### 1. Fixed Percentage
+#### 1. Fixed Percentage
 
 Simple fixed percentage of capital:
 
@@ -156,7 +124,7 @@ def fixed_percentage(capital: float, risk_tolerance: float) -> float:
     return capital * base_pct
 ```
 
-### 2. Kelly Criterion
+#### 2. Kelly Criterion
 
 Optimal position size for maximum growth:
 
@@ -187,7 +155,7 @@ def kelly_criterion(
     return capital * max(0, min(fraction, 0.25))  # Cap at 25%
 ```
 
-### 3. Volatility-Adjusted
+#### 3. Volatility-Adjusted
 
 Position size inversely proportional to volatility:
 
@@ -214,28 +182,7 @@ def volatility_adjusted(
 
 ### Implementation
 
-**File:** [`breakeven_tracker.py`](file:///d:/Major%20Project/backend/app/trader_behavior/breakeven_tracker.py)
-
-### Position Tracking
-
-```mermaid
-stateDiagram-v2
-    [*] --> NewPosition: Open Trade
-    
-    NewPosition --> InProfit: Price > Entry
-    NewPosition --> InLoss: Price < Entry
-    
-    InProfit --> BreakEven: Take Partial Profit
-    InLoss --> StopLoss: Hit Stop-Loss
-    
-    BreakEven --> InProfit: Price Rises
-    BreakEven --> InLoss: Price Falls
-    
-    InProfit --> Closed: Take Profit
-    StopLoss --> Closed: Exit
-    
-    Closed --> [*]
-```
+**File:** [`breakeven_tracker.py`](../backend/app/trader_behavior/breakeven_tracker.py)
 
 ### Key Functions
 
@@ -318,19 +265,6 @@ Content-Type: application/json
         "suggested_stop_loss": 0.05,
         "suggested_take_profit": 0.10
     }
-}
-```
-
-### Update Preferences
-
-```http
-PUT /api/v1/profile/preferences
-Content-Type: application/json
-
-{
-    "use_sentiment": false,
-    "preferred_timeframe": "1d",
-    "risk_tolerance": 0.65
 }
 ```
 

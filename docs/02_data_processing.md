@@ -14,16 +14,7 @@ Layer 1 is responsible for:
 
 ## Data Flow
 
-```mermaid
-graph LR
-    A[NSE/BSE] -->|yfinance| B[OHLCV Data]
-    B --> C[Technical Indicators]
-    B --> D[LSTM Model]
-    C --> E[State Builder]
-    D --> E
-    E --> F[Normalized Vector]
-    F --> G[PPO Agent]
-```
+![Data Flow Diagram](images/data_flow.png)
 
 ---
 
@@ -31,7 +22,7 @@ graph LR
 
 ### Implementation
 
-**File:** [`market_data.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/market_data.py)
+**File:** [`market_data.py`](../backend/app/layer1_data_processing/market_data.py)
 
 ```python
 # Key functions
@@ -60,35 +51,7 @@ The system supports all NIFTY 50 constituents including:
 
 ### Implementation
 
-**File:** [`technical_indicators.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/technical_indicators.py)
-
-### Indicator Categories
-
-```mermaid
-mindmap
-  root((Technical Indicators))
-    Trend
-      SMA 20/50
-      EMA 12/26
-      MACD
-      ADX
-    Momentum
-      RSI
-      Stochastic
-      Williams %R
-      ROC
-    Volatility
-      Bollinger Bands
-      ATR
-      Standard Deviation
-    Volume
-      OBV
-      VWAP
-      Volume SMA
-    Price Action
-      Pivot Points
-      Support/Resistance
-```
+**File:** [`technical_indicators.py`](../backend/app/layer1_data_processing/technical_indicators.py)
 
 ### Full Indicator List (30+)
 
@@ -111,17 +74,7 @@ mindmap
 
 ### Architecture
 
-```mermaid
-graph TB
-    A[Input Sequence<br/>30 days × 5 features] --> B[LSTM Layer 1<br/>64 hidden units]
-    B --> C[LSTM Layer 2<br/>64 hidden units]
-    C --> D[Dropout 0.2]
-    D --> E[Linear 64→32]
-    E --> F[ReLU]
-    F --> G[Dropout 0.2]
-    G --> H[Linear 32→1]
-    H --> I[Predicted Price]
-```
+![LSTM Architecture](images/lstm_architecture.png)
 
 ### Training Details
 
@@ -147,7 +100,7 @@ graph TB
 
 ### Training Script
 
-**File:** [`training/train_lstm.py`](file:///d:/Major%20Project/backend/training/train_lstm.py)
+**File:** [`training/train_lstm.py`](../backend/training/train_lstm.py)
 
 ```bash
 # To train the model
@@ -161,31 +114,15 @@ cd backend
 
 ### Implementation
 
-**File:** [`state_builder.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/state_builder.py)
+**File:** [`state_builder.py`](../backend/app/layer1_data_processing/state_builder.py)
 
 ### State Vector Components
 
-```mermaid
-graph TB
-    subgraph "Input Features"
-        A[OHLCV Data]
-        B[Technical Indicators]
-        C[Trader Profile]
-        D[Portfolio State]
-    end
-    
-    subgraph "Processing"
-        A --> E[Normalize]
-        B --> E
-        C --> E
-        D --> E
-    end
-    
-    subgraph "Output"
-        E --> F[State Vector<br/>~50 dimensions]
-        F --> G[PPO Agent]
-    end
-```
+The state vector includes:
+1. **Price Features** (normalized OHLCV)
+2. **Technical Indicators** (30+ normalized features)
+3. **Trader Profile** (risk tolerance, position state)
+4. **Portfolio State** (balance, holdings, unrealized P&L)
 
 ### Normalization
 
@@ -229,7 +166,7 @@ print(f"State shape: {state.shape}")  # (50,)
 
 The prediction service integrates Layer 1 outputs with the API:
 
-**File:** [`services/prediction_service.py`](file:///d:/Major%20Project/backend/app/services/prediction_service.py)
+**File:** [`services/prediction_service.py`](../backend/app/services/prediction_service.py)
 
 ```python
 from app.services.prediction_service import get_prediction_service

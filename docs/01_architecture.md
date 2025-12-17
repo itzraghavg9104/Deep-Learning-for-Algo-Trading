@@ -14,57 +14,14 @@ Our platform implements a **two-stage architecture** that mimics the cognitive p
 
 ---
 
-## High-Level Architecture
+## Data Flow Pipeline
 
-```mermaid
-graph TB
-    subgraph "Data Sources"
-        A[NSE/BSE Market Data] --> B[yfinance API]
-        C[Historical NIFTY 50] --> B
-    end
-    
-    subgraph "Layer 1: Data Processing"
-        B --> D[Technical Indicators<br/>30+ Indicators]
-        B --> E[LSTM Predictor<br/>Price Forecasting]
-        D --> F[State Vector Builder]
-        E --> F
-    end
-    
-    subgraph "Trader Behavior"
-        G[Risk Profiler] --> H[Position Sizer]
-        H --> I[Break-Even Tracker]
-    end
-    
-    subgraph "Layer 2: Decision Engine"
-        F --> J[PPO Agent]
-        I --> J
-        J --> K{Trading Signal}
-    end
-    
-    K -->|BUY| L[Execute Trade]
-    K -->|SELL| L
-    K -->|HOLD| M[Wait]
-    
-    subgraph "API Layer"
-        L --> N[FastAPI Backend]
-        M --> N
-        N --> O[REST Endpoints]
-    end
-    
-    subgraph "Frontend"
-        O --> P[Next.js Dashboard]
-        P --> Q[Real-time Signals]
-        P --> R[Charts & Analytics]
-    end
+![Data Flow Diagram](images/data_flow.png)
 
-    style A fill:#3b82f6
-    style B fill:#3b82f6
-    style D fill:#8b5cf6
-    style E fill:#8b5cf6
-    style J fill:#a855f7
-    style N fill:#f97316
-    style P fill:#06b6d4
-```
+The data flows through the system in three stages:
+1. **Input**: Real-time NSE/BSE stock data via yfinance API
+2. **Processing**: Technical indicators + LSTM predictions combined into state vector
+3. **Decision**: PPO agent outputs optimal trading action with confidence score
 
 ---
 
@@ -80,13 +37,15 @@ graph TB
 | State Builder | NumPy | Normalize and combine all features |
 
 **Files:**
-- [`market_data.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/market_data.py) - NSE/BSE data fetching
-- [`technical_indicators.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/technical_indicators.py) - 30+ indicators
-- [`state_builder.py`](file:///d:/Major%20Project/backend/app/layer1_data_processing/state_builder.py) - Feature normalization
+- [`market_data.py`](../backend/app/layer1_data_processing/market_data.py) - NSE/BSE data fetching
+- [`technical_indicators.py`](../backend/app/layer1_data_processing/technical_indicators.py) - 30+ indicators
+- [`state_builder.py`](../backend/app/layer1_data_processing/state_builder.py) - Feature normalization
 
 ---
 
 ### Layer 2: Decision Engine
+
+![PPO Training Workflow](images/ppo_training.png)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
@@ -100,66 +59,31 @@ graph TB
 - **Timesteps**: 30,000
 
 **Files:**
-- [`trading_env.py`](file:///d:/Major%20Project/backend/app/layer2_decision/trading_env.py) - Gymnasium environment
-- [`ppo_agent.py`](file:///d:/Major%20Project/backend/app/layer2_decision/ppo_agent.py) - PPO wrapper
-- [`reward_function.py`](file:///d:/Major%20Project/backend/app/layer2_decision/reward_function.py) - Sharpe optimization
+- [`trading_env.py`](../backend/app/layer2_decision/trading_env.py) - Gymnasium environment
+- [`ppo_agent.py`](../backend/app/layer2_decision/ppo_agent.py) - PPO wrapper
+- [`reward_function.py`](../backend/app/layer2_decision/reward_function.py) - Sharpe optimization
 
 ---
 
 ### Trader Behavior Module
 
-```mermaid
-graph LR
-    A[Risk Questionnaire] --> B[Risk Score<br/>0.0 - 1.0]
-    B --> C{Risk Category}
-    C -->|< 0.3| D[Conservative]
-    C -->|0.3-0.5| E[Moderate]
-    C -->|0.5-0.7| F[Growth]
-    C -->|> 0.7| G[Aggressive]
-    
-    D --> H[Position Sizer]
-    E --> H
-    F --> H
-    G --> H
-    
-    H --> I[Kelly Criterion]
-    H --> J[Fixed %]
-    H --> K[Volatility-Adjusted]
-    
-    I --> L[Trade Size]
-    J --> L
-    K --> L
-```
+![Risk Profiler](images/risk_profiler.png)
 
 **Components:**
-- **Risk Profiler**: Questionnaire-based risk assessment
+- **Risk Profiler**: Questionnaire-based risk assessment (0.0-1.0 score)
 - **Position Sizer**: Kelly Criterion, volatility-adjusted sizing
 - **Break-Even Tracker**: P&L and position management
 
 ---
 
-## API Architecture
+## Training Pipeline
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant API
-    participant LSTM
-    participant PPO
-    participant Market
+![Training Pipeline](images/training_pipeline.png)
 
-    User->>Frontend: Request Signal
-    Frontend->>API: GET /trading/signals/RELIANCE.NS
-    API->>Market: Fetch OHLCV Data
-    Market-->>API: Price Data
-    API->>LSTM: Predict Price
-    LSTM-->>API: Predicted Price + Confidence
-    API->>PPO: Get Action
-    PPO-->>API: BUY/SELL/HOLD
-    API-->>Frontend: Signal Response
-    Frontend-->>User: Display Signal Card
-```
+**Step 1**: Download 5 years of NIFTY 50 data (20 stocks)
+**Step 2**: Train LSTM model (Val Loss: 0.000228)
+**Step 3**: Train PPO agent (132% Return, 0.66 Sharpe)
+**Step 4**: Deploy to FastAPI for real-time predictions
 
 ---
 
@@ -176,26 +100,6 @@ sequenceDiagram
 
 ---
 
-## Deployment Architecture
-
-```mermaid
-graph TB
-    subgraph "Production"
-        A[Nginx Reverse Proxy] --> B[FastAPI Backend]
-        A --> C[Next.js Frontend]
-        B --> D[(PostgreSQL)]
-        B --> E[(Redis Cache)]
-        B --> F[Model Files<br/>LSTM + PPO]
-    end
-    
-    subgraph "Development"
-        G[uvicorn --reload] --> H[Hot Reload]
-        I[npm run dev] --> J[Turbopack]
-    end
-```
-
----
-
 ## Directory Structure
 
 ```
@@ -204,25 +108,11 @@ Deep-Learning-for-Algo-Trading/
 │   ├── app/
 │   │   ├── api/routes/         # FastAPI endpoints
 │   │   ├── layer1_data_processing/
-│   │   │   ├── market_data.py
-│   │   │   ├── technical_indicators.py
-│   │   │   └── state_builder.py
 │   │   ├── layer2_decision/
-│   │   │   ├── trading_env.py
-│   │   │   ├── ppo_agent.py
-│   │   │   └── reward_function.py
 │   │   ├── trader_behavior/
-│   │   │   ├── risk_profiler.py
-│   │   │   ├── position_sizer.py
-│   │   │   └── breakeven_tracker.py
 │   │   └── services/
-│   │       └── prediction_service.py
-│   ├── training/
-│   │   ├── train_lstm.py
-│   │   └── train_ppo.py
+│   ├── training/               # Training scripts
 │   ├── models/                 # Trained models
-│   │   ├── lstm_final.pt
-│   │   └── ppo_trading_final.zip
 │   └── data/                   # Training data
 ├── frontend/
 │   └── src/
@@ -230,6 +120,7 @@ Deep-Learning-for-Algo-Trading/
 │       ├── components/         # React components
 │       └── lib/                # Utilities
 ├── docs/                       # Documentation
+│   └── images/                 # Diagram images
 └── references/                 # Research papers
 ```
 
