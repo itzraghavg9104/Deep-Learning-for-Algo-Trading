@@ -11,6 +11,14 @@ from app.layer1_data_processing.technical_indicators import compute_indicators
 
 router = APIRouter()
 
+# Try to import prediction service
+try:
+    from app.services.prediction_service import get_prediction_service
+    PREDICTION_AVAILABLE = True
+except Exception as e:
+    print(f"Prediction service not available: {e}")
+    PREDICTION_AVAILABLE = False
+
 
 class SignalResponse(BaseModel):
     """Trading signal response model."""
@@ -31,17 +39,19 @@ class MarketDataResponse(BaseModel):
     indicators: dict
 
 
-@router.get("/signals/{symbol}", response_model=SignalResponse)
+@router.get("/signals/{symbol}")
 async def get_trading_signal(
     symbol: str,
-    use_sentiment: bool = Query(False, description="Include sentiment analysis")
+    use_sentiment: bool = Query(False, description="Include sentiment analysis"),
+    use_model: bool = Query(True, description="Use trained LSTM model")
 ):
     """
-    Get trading signal for a symbol.
+    Get trading signal for a symbol using trained LSTM model.
     
     Args:
-        symbol: Stock symbol (e.g., RELIANCE.NS for NSE, RELIANCE.BO for BSE)
-        use_sentiment: Whether to include sentiment analysis (optional)
+        symbol: Stock symbol (e.g., RELIANCE.NS for NSE)
+        use_sentiment: Whether to include sentiment analysis
+        use_model: Whether to use trained LSTM model for prediction
     
     Returns:
         Trading signal with action, confidence, and supporting data
@@ -56,25 +66,43 @@ async def get_trading_signal(
         # Compute indicators
         indicators = compute_indicators(data)
         
-        # TODO: Get prediction from DeepAR model
+        # Get prediction from trained model
+        if use_model and PREDICTION_AVAILABLE:
+            pred_service = get_prediction_service()
+            model_pred = pred_service.predict(symbol)
+            
+            if model_pred.get("error") is None:
+                return {
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat(),
+                    "action": model_pred["action"],
+                    "confidence": round(model_pred["confidence"], 2),
+                    "prediction": {
+                        "current_price": model_pred["current_price"],
+                        "predicted_price": round(model_pred["predicted_price"], 2),
+                        "price_change": round(model_pred["price_change"], 2),
+                        "change_pct": round(model_pred["change_pct"], 2),
+                        "model": model_pred["model"]
+                    },
+                    "indicators": indicators
+                }
+        
+        # Fallback: Simple rule-based signal
         prediction = {
-            "price_mean": float(data['Close'].iloc[-1]),
-            "price_std": float(data['Close'].std()),
-            "change_pct": 0.0
+            "current_price": float(data['Close'].iloc[-1]),
+            "predicted_price": float(data['Close'].iloc[-1]),
+            "change_pct": 0.0,
+            "model": "fallback"
         }
         
-        # TODO: Get action from PPO agent
-        action = "HOLD"
-        confidence = 0.5
-        
-        return SignalResponse(
-            symbol=symbol,
-            timestamp=datetime.now(),
-            action=action,
-            confidence=confidence,
-            prediction=prediction,
-            indicators=indicators
-        )
+        return {
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat(),
+            "action": "HOLD",
+            "confidence": 0.5,
+            "prediction": prediction,
+            "indicators": indicators
+        }
         
     except HTTPException:
         raise
@@ -89,13 +117,6 @@ async def get_market_info(
 ):
     """
     Get market data and technical indicators for a symbol.
-    
-    Args:
-        symbol: Stock symbol (e.g., RELIANCE.NS)
-        period: Data period
-    
-    Returns:
-        Current price, change, volume, and indicators
     """
     try:
         data = await get_market_data(symbol, period=period)
@@ -126,7 +147,7 @@ async def get_market_info(
 @router.get("/watchlist")
 async def get_watchlist_signals():
     """
-    Get signals for popular NSE stocks.
+    Get signals for popular NSE stocks using trained model.
     """
     symbols = [
         "RELIANCE.NS",
@@ -137,22 +158,59 @@ async def get_watchlist_signals():
     ]
     
     signals = []
-    for symbol in symbols:
-        try:
-            data = await get_market_data(symbol, period="1mo")
-            if data is not None and not data.empty:
-                current = data.iloc[-1]
-                prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
-                change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
-                
-                signals.append({
-                    "symbol": symbol,
-                    "price": float(current['Close']),
-                    "change_pct": round(float(change_pct), 2),
-                    "action": "HOLD",  # TODO: From PPO agent
-                    "confidence": 0.5
-                })
-        except Exception:
-            continue
     
-    return {"signals": signals}
+    # Try to use prediction service
+    if PREDICTION_AVAILABLE:
+        pred_service = get_prediction_service()
+        for symbol in symbols:
+            try:
+                pred = pred_service.predict(symbol)
+                if pred.get("error") is None:
+                    signals.append({
+                        "symbol": symbol,
+                        "price": round(pred["current_price"], 2),
+                        "predicted_price": round(pred["predicted_price"], 2),
+                        "change_pct": round(pred["change_pct"], 2),
+                        "action": pred["action"],
+                        "confidence": round(pred["confidence"], 2),
+                        "model": pred["model"]
+                    })
+                else:
+                    # Fallback for this symbol
+                    data = await get_market_data(symbol, period="1mo")
+                    if data is not None and not data.empty:
+                        current = data.iloc[-1]
+                        prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
+                        change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
+                        signals.append({
+                            "symbol": symbol,
+                            "price": round(float(current['Close']), 2),
+                            "predicted_price": round(float(current['Close']), 2),
+                            "change_pct": round(float(change_pct), 2),
+                            "action": "HOLD",
+                            "confidence": 0.5,
+                            "model": "fallback"
+                        })
+            except Exception:
+                continue
+    else:
+        # Fallback mode without model
+        for symbol in symbols:
+            try:
+                data = await get_market_data(symbol, period="1mo")
+                if data is not None and not data.empty:
+                    current = data.iloc[-1]
+                    prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
+                    change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
+                    
+                    signals.append({
+                        "symbol": symbol,
+                        "price": round(float(current['Close']), 2),
+                        "change_pct": round(float(change_pct), 2),
+                        "action": "HOLD",
+                        "confidence": 0.5
+                    })
+            except Exception:
+                continue
+    
+    return {"signals": signals, "model_available": PREDICTION_AVAILABLE}
