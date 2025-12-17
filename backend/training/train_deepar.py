@@ -23,53 +23,64 @@ def load_training_data(data_path: str = "./data/training_data.csv") -> pd.DataFr
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(["symbol", "date"]).reset_index(drop=True)
     
-    # Recreate time index
+    # Recreate time index per symbol
     df["time_idx"] = df.groupby("symbol").cumcount()
+    
+    # Fill any NaN values
+    df = df.fillna(method='ffill').fillna(method='bfill')
+    
+    # Ensure numeric columns
+    for col in ["open", "high", "low", "close", "volume"]:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    df = df.dropna()
     
     return df
 
 
 def create_datasets(
     df: pd.DataFrame,
-    max_encoder_length: int = 60,
+    max_encoder_length: int = 30,
     max_prediction_length: int = 5,
     training_cutoff_ratio: float = 0.8
 ):
     """
     Create TimeSeriesDataSet for training and validation.
-    
-    Args:
-        df: Prepared DataFrame
-        max_encoder_length: Number of historical days to use
-        max_prediction_length: Number of days to predict
-        training_cutoff_ratio: Train/validation split ratio
-    
-    Returns:
-        Tuple of (training_dataset, validation_dataset)
     """
-    # Calculate training cutoff
-    training_cutoff = int(df["time_idx"].max() * training_cutoff_ratio)
+    # Calculate training cutoff per group
+    max_time_idx = df.groupby("symbol")["time_idx"].max().min()
+    training_cutoff = int(max_time_idx * training_cutoff_ratio)
+    
+    print(f"Max time index: {max_time_idx}")
+    print(f"Training cutoff: {training_cutoff}")
+    
+    # Filter training data
+    train_df = df[df["time_idx"] <= training_cutoff].copy()
     
     # Create training dataset
     training = TimeSeriesDataSet(
-        df[df["time_idx"] <= training_cutoff],
+        train_df,
         time_idx="time_idx",
         target="close",
         group_ids=["symbol"],
+        min_encoder_length=max_encoder_length // 2,
         max_encoder_length=max_encoder_length,
+        min_prediction_length=1,
         max_prediction_length=max_prediction_length,
-        time_varying_unknown_reals=["close", "open", "high", "low", "volume"],
+        time_varying_known_reals=["time_idx"],
+        time_varying_unknown_reals=["close", "volume"],
         target_normalizer="auto",
         add_relative_time_idx=True,
         add_encoder_length=True,
-        categorical_encoders={"symbol": NaNLabelEncoder(add_nan=True)},
+        allow_missing_timesteps=True,
     )
     
-    # Create validation dataset using same parameters
+    # Create validation dataset
     validation = TimeSeriesDataSet.from_dataset(
         training,
         df,
-        min_prediction_idx=training_cutoff + 1,
+        predict=True,
+        stop_randomization=True,
     )
     
     return training, validation
@@ -78,30 +89,16 @@ def create_datasets(
 def train_deepar(
     training: TimeSeriesDataSet,
     validation: TimeSeriesDataSet,
-    hidden_size: int = 64,
+    hidden_size: int = 32,
     rnn_layers: int = 2,
     dropout: float = 0.1,
     learning_rate: float = 1e-3,
-    max_epochs: int = 50,
-    batch_size: int = 64,
+    max_epochs: int = 30,
+    batch_size: int = 32,
     model_path: str = "./models"
 ) -> DeepAR:
     """
     Train DeepAR model.
-    
-    Args:
-        training: Training dataset
-        validation: Validation dataset
-        hidden_size: LSTM hidden size
-        rnn_layers: Number of RNN layers
-        dropout: Dropout rate
-        learning_rate: Learning rate
-        max_epochs: Maximum training epochs
-        batch_size: Batch size
-        model_path: Path to save model
-    
-    Returns:
-        Trained DeepAR model
     """
     os.makedirs(model_path, exist_ok=True)
     
@@ -153,7 +150,7 @@ def train_deepar(
         gradient_clip_val=0.1,
         callbacks=[early_stop, checkpoint],
         enable_progress_bar=True,
-        logger=True,
+        log_every_n_steps=10,
     )
     
     # Train
@@ -174,31 +171,6 @@ def train_deepar(
     return model
 
 
-def predict(
-    model: DeepAR,
-    dataset: TimeSeriesDataSet,
-    return_x: bool = True
-):
-    """
-    Make predictions with trained model.
-    
-    Args:
-        model: Trained DeepAR model
-        dataset: Dataset to predict on
-        return_x: Whether to return input data
-    
-    Returns:
-        Predictions DataFrame
-    """
-    predictions = model.predict(
-        dataset.to_dataloader(train=False, batch_size=64),
-        return_x=return_x,
-        mode="prediction"
-    )
-    
-    return predictions
-
-
 if __name__ == "__main__":
     print("=" * 50)
     print("DeepAR Stock Price Forecasting Training")
@@ -215,11 +187,12 @@ if __name__ == "__main__":
     print("Loading data...")
     df = load_training_data(data_path)
     print(f"Loaded {len(df)} rows, {df['symbol'].nunique()} symbols")
+    print(f"Columns: {df.columns.tolist()}")
     
     print("\nCreating datasets...")
     training, validation = create_datasets(
         df,
-        max_encoder_length=60,  # 60 days of history
+        max_encoder_length=30,  # 30 days of history
         max_prediction_length=5,  # Predict 5 days ahead
     )
     print(f"Training samples: {len(training)}")
@@ -229,11 +202,13 @@ if __name__ == "__main__":
     model = train_deepar(
         training,
         validation,
-        hidden_size=64,
+        hidden_size=32,
         rnn_layers=2,
-        max_epochs=50,
-        batch_size=64,
+        max_epochs=30,
+        batch_size=32,
         model_path="./models"
     )
     
-    print("\nTraining complete!")
+    print("\n" + "=" * 50)
+    print("Training complete!")
+    print("=" * 50)
