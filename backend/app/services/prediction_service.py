@@ -92,16 +92,69 @@ class PredictionService:
             print(f"Error loading model: {e}")
             self.model = None
     
-    def predict(self, symbol: str) -> Dict:
+    def get_ppo_signal(self, symbol: str, risk_tolerance: float = 0.5) -> Dict:
         """
-        Make a prediction for a given stock symbol.
+        Get trading signal using the PPO agent.
         
-        Args:
-            symbol: Stock symbol (e.g., RELIANCE.NS)
-        
-        Returns:
-            Dictionary with prediction details
+        This uses the same environment logic as training to ensure consistency.
         """
+        try:
+            # 1. Get recent market data
+            from app.layer1_data_processing.market_data import fetch_market_data_sync
+            df = fetch_market_data_sync(symbol, period="1mo", interval="1d")
+            
+            if df is None or len(df) < 30:
+                return {"action": "HOLD", "confidence": 0.5, "error": "Insufficient data for PPO"}
+            
+            # 2. Initialize a temporary environment to get the state
+            from app.layer2_decision.trading_env import TradingEnv
+            env = TradingEnv(df=df, risk_tolerance=risk_tolerance)
+            obs, _ = env.reset()
+            
+            # 3. Load PPO model and predict
+            from stable_baselines3 import PPO
+            from app.config import settings
+            ppo_model_path = os.path.join(settings.MODEL_PATH, "ppo_trading_final.zip")
+            
+            if not os.path.exists(ppo_model_path):
+                return {"action": "HOLD", "confidence": 0.5, "error": "PPO model not found"}
+            
+            ppo_model = PPO.load(ppo_model_path)
+            action, _states = ppo_model.predict(obs, deterministic=True)
+            
+            # Action mapping: 0=HOLD, 1=BUY, 2=SELL
+            actions = ["HOLD", "BUY", "SELL"]
+            
+            return {
+                "action": actions[int(action)],
+                "confidence": 0.8,  # PPO doesn't give direct confidence easily, use constant or probe policy
+                "model": "PPO"
+            }
+        except Exception as e:
+            return {"action": "HOLD", "confidence": 0.5, "error": str(e)}
+
+    def predict(self, symbol: str, risk_tolerance: float = 0.5) -> Dict:
+        """
+        Make a prediction for a given stock symbol using both LSTM and PPO.
+        """
+        # Get LSTM Prediction
+        lstm_result = self._get_lstm_prediction(symbol)
+        
+        # Get PPO Signal
+        ppo_result = self.get_ppo_signal(symbol, risk_tolerance)
+        
+        # Merge results
+        final_result = lstm_result.copy()
+        if ppo_result.get("error") is None:
+            # Prefer PPO action if available as it's the 'Decision Engine'
+            final_result["action"] = ppo_result["action"]
+            final_result["ppo_confidence"] = ppo_result["confidence"]
+            final_result["model"] = "LSTM+PPO"
+        
+        return final_result
+
+    def _get_lstm_prediction(self, symbol: str) -> Dict:
+        """Original LSTM prediction logic (internal)."""
         if self.model is None:
             return {
                 "symbol": symbol,
@@ -114,7 +167,8 @@ class PredictionService:
             seq_length = self.config.get('seq_length', 30)
             features = self.config.get('features', ['open', 'high', 'low', 'close', 'volume'])
             
-            # Fetch data (need extra days for sequence)
+            # Fetch data
+            from app.layer1_data_processing.market_data import fetch_market_data_sync
             df = fetch_market_data_sync(symbol, period="3mo", interval="1d")
             
             if df is None or len(df) < seq_length:
@@ -129,7 +183,6 @@ class PredictionService:
             
             # Scale data
             scaler = MinMaxScaler()
-            data = df[features].values[-seq_length:]
             scaled_data = scaler.fit_transform(df[features].values)[-seq_length:]
             
             # Create sequence
@@ -139,20 +192,18 @@ class PredictionService:
             with torch.no_grad():
                 pred_scaled = self.model(sequence).cpu().numpy()[0][0]
             
-            # Inverse transform (approximate - use close price column index)
+            # Inverse transform
             current_price = df['close'].iloc[-1]
             close_idx = features.index('close')
             
-            # Scale back
             dummy = np.zeros((1, len(features)))
             dummy[0, close_idx] = pred_scaled
             pred_unscaled = scaler.inverse_transform(dummy)[0, close_idx]
             
-            # Calculate change
             price_change = pred_unscaled - current_price
             change_pct = (price_change / current_price) * 100
             
-            # Determine action and confidence
+            # Initial action based on LSTM
             if change_pct > 1.0:
                 action = "BUY"
                 confidence = min(0.5 + change_pct / 10, 0.95)
@@ -161,7 +212,7 @@ class PredictionService:
                 confidence = min(0.5 + abs(change_pct) / 10, 0.95)
             else:
                 action = "HOLD"
-                confidence = 0.5 + (0.5 - abs(change_pct) / 2) * 0.3
+                confidence = 0.5
             
             return {
                 "symbol": symbol,

@@ -4,7 +4,8 @@ Algo Trading System - FastAPI Backend
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import trading, backtest, profile
+from app.api.routes import trading, backtest, profile, auth
+from app.api import websocket as websocket_router
 from app.config import settings
 
 app = FastAPI(
@@ -28,6 +29,8 @@ app.add_middleware(
 app.include_router(trading.router, prefix="/api/v1/trading", tags=["Trading"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtest"])
 app.include_router(profile.router, prefix="/api/v1/profile", tags=["Profile"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(websocket_router.router, prefix="/api/v1", tags=["WebSocket"])
 
 
 @app.get("/")

@@ -4,20 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
     BarChart3,
-    LineChart,
     User,
-    Settings,
     TrendingUp,
     History,
+    ClipboardList,
 } from "lucide-react";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-    { href: "/dashboard/signals", label: "Signals", icon: TrendingUp },
-    { href: "/dashboard/backtest", label: "Backtest", icon: History },
-    { href: "/dashboard/analysis", label: "Analysis", icon: LineChart },
+    { href: "/backtest", label: "Backtest", icon: History },
+    { href: "/trades", label: "Trades", icon: ClipboardList },
+    { href: "/profile/risk-assessment", label: "Risk Assessment", icon: TrendingUp },
     { href: "/profile", label: "Profile", icon: User },
-    { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

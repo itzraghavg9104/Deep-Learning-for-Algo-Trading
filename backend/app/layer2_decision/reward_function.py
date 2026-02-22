@@ -192,6 +192,8 @@ class RewardTracker:
                 "sharpe_ratio": 0,
                 "max_drawdown": 0,
                 "win_rate": 0,
+                "profit_factor": 0,
+                "equity_curve": [],
             }
         
         # Total return
@@ -209,20 +211,29 @@ class RewardTracker:
             dd = (peak - val) / peak
             max_dd = max(max_dd, dd)
         
-        # Win rate from trades
+        # Win rate and profit factor from trades
+        profitable_trades = [t for t in self.trades if t.get('pnl', 0) > 0]
+        losing_trades = [t for t in self.trades if t.get('pnl', 0) < 0]
+        
         if self.trades:
-            profitable = sum(1 for t in self.trades if t.get('pnl', 0) > 0)
-            win_rate = profitable / len(self.trades) * 100
+            win_rate = len(profitable_trades) / len(self.trades) * 100
         else:
             win_rate = 0
+            
+        total_profit = sum(t.get('pnl', 0) for t in profitable_trades)
+        total_loss = abs(sum(t.get('pnl', 0) for t in losing_trades))
+        
+        profit_factor = total_profit / total_loss if total_loss > 0 else (total_profit if total_profit > 0 else 0)
         
         return {
             "total_return": round(total_return, 2),
             "sharpe_ratio": round(sharpe, 2),
             "max_drawdown": round(max_dd * 100, 2),
             "win_rate": round(win_rate, 2),
+            "profit_factor": round(profit_factor, 2),
             "total_trades": len(self.trades),
             "final_value": round(self.portfolio_values[-1], 2),
+            "equity_curve": self.portfolio_values
         }
     
     def reset(self):

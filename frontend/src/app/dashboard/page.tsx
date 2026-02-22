@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { SignalCard, StatsCard } from "@/components/dashboard";
 import { tradingApi } from "@/lib/api";
+import { PriceChart } from "@/components/charts/PriceChart";
+import { TechnicalIndicators } from "@/components/charts/TechnicalIndicators";
+import { SignalGauge } from "@/components/charts/SignalGauge";
+import { useWebsocket } from "@/lib/use-websocket";
+import { getMarketStatusLabel, isMarketOpen } from "@/lib/market-hours";
 import { RefreshCw, Clock, Wifi, WifiOff } from "lucide-react";
 
 interface Signal {
@@ -13,13 +18,42 @@ interface Signal {
     confidence: number;
 }
 
+type MarketHistoryPoint = {
+    timestamp: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+};
+
+type MarketDataResponse = {
+    symbol: string;
+    current_price: number;
+    change_pct: number;
+    volume: number;
+    indicators: Record<string, unknown>;
+    history: MarketHistoryPoint[];
+};
+
 export default function DashboardPage() {
     const [signals, setSignals] = useState<Signal[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [isConnected, setIsConnected] = useState(true);
-    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const [marketData, setMarketData] = useState<MarketDataResponse | null>(null);
+    const [marketLoading, setMarketLoading] = useState(false);
+    const [marketError, setMarketError] = useState<string | null>(null);
+    const [sparklineBySymbol, setSparklineBySymbol] = useState<
+        Record<string, { values: number[]; updatedAt: number }>
+    >({});
+    const [flashBySymbol, setFlashBySymbol] = useState<Record<string, "up" | "down">>({});
+    const [marketStatus, setMarketStatus] = useState(() => ({
+        isOpen: isMarketOpen(),
+        label: getMarketStatusLabel(),
+    }));
 
     const fetchSignals = useCallback(async () => {
         setLoading(true);
@@ -29,7 +63,7 @@ export default function DashboardPage() {
             setSignals(data.signals || []);
             setLastUpdated(new Date());
             setIsConnected(true);
-        } catch (err) {
+        } catch {
             setError("Backend offline - showing cached data");
             setIsConnected(false);
             // Demo data when backend is down
@@ -51,21 +85,128 @@ export default function DashboardPage() {
         fetchSignals();
     }, [fetchSignals]);
 
-    // Auto-refresh every 30 seconds
     useEffect(() => {
-        if (!autoRefresh) return;
-
         const interval = setInterval(() => {
-            fetchSignals();
-        }, 30000);
+            setMarketStatus({
+                isOpen: isMarketOpen(),
+                label: getMarketStatusLabel(),
+            });
+        }, 60000);
 
         return () => clearInterval(interval);
-    }, [autoRefresh, fetchSignals]);
+    }, []);
 
     // Calculate portfolio metrics from signals
     const totalChange = signals.reduce((acc, s) => acc + s.change_pct, 0) / (signals.length || 1);
     const buySignals = signals.filter(s => s.action === "BUY").length;
     const sellSignals = signals.filter(s => s.action === "SELL").length;
+
+    const selectedSignal = useMemo(
+        () => signals.find((signal) => signal.symbol === selectedSymbol) ?? null,
+        [signals, selectedSymbol],
+    );
+
+    const openSymbol = async (symbol: string) => {
+        setSelectedSymbol(symbol);
+        setMarketLoading(true);
+        setMarketError(null);
+        try {
+            const data = await tradingApi.getMarketData(symbol, "3mo");
+            setMarketData(data);
+        } catch {
+            setMarketError("Failed to load market data.");
+            setMarketData(null);
+        } finally {
+            setMarketLoading(false);
+        }
+    };
+
+    const closeModal = () => {
+        setSelectedSymbol(null);
+        setMarketData(null);
+        setMarketError(null);
+    };
+
+    useEffect(() => {
+        if (!signals.length) return;
+
+        const now = Date.now();
+
+        const loadSparklines = async () => {
+            await Promise.all(
+                signals.map(async (signal) => {
+                    const cached = sparklineBySymbol[signal.symbol];
+                    if (cached && now - cached.updatedAt < 5 * 60 * 1000) {
+                        return;
+                    }
+                    try {
+                        const data = await tradingApi.getMarketData(signal.symbol, "1mo");
+                        const values = (data.history || []).map((point: MarketHistoryPoint) => point.close);
+                        if (values.length) {
+                            setSparklineBySymbol((prev) => ({
+                                ...prev,
+                                [signal.symbol]: { values: values.slice(-30), updatedAt: Date.now() },
+                            }));
+                        }
+                    } catch {
+                        // Ignore sparkline failures to keep dashboard responsive
+                    }
+                }),
+            );
+        };
+
+        loadSparklines();
+    }, [signals, sparklineBySymbol]);
+
+    const handleWsMessage = useCallback(
+        (payload: unknown) => {
+            if (!payload || typeof payload !== "object") return;
+            const message = payload as { type?: string; data?: Array<{ symbol: string; price: number; change_pct: number }> };
+            if (message.type !== "prices" || !message.data) return;
+
+            setSignals((prev) =>
+                prev.map((signal) => {
+                    const update = message.data?.find((item) => item.symbol === signal.symbol);
+                    if (!update) return signal;
+                    return {
+                        ...signal,
+                        price: update.price,
+                        change_pct: update.change_pct,
+                    };
+                }),
+            );
+
+            message.data.forEach((update) => {
+                setFlashBySymbol((prev) => ({
+                    ...prev,
+                    [update.symbol]: update.change_pct >= 0 ? "up" : "down",
+                }));
+                setTimeout(() => {
+                    setFlashBySymbol((prev) => {
+                        const copy = { ...prev };
+                        delete copy[update.symbol];
+                        return copy;
+                    });
+                }, 800);
+            });
+
+            setLastUpdated(new Date());
+            setIsConnected(true);
+        },
+        [],
+    );
+
+    const { status, subscribe } = useWebsocket({ onMessage: handleWsMessage, shouldConnect: true });
+
+    useEffect(() => {
+        if (status !== "open" || !signals.length) return;
+        const symbols = signals.map((signal) => signal.symbol);
+        subscribe(symbols);
+    }, [status, signals, subscribe]);
+
+    useEffect(() => {
+        setIsConnected(status === "open");
+    }, [status]);
 
     return (
         <div className="max-w-7xl mx-auto">
@@ -82,19 +223,8 @@ export default function DashboardPage() {
                             : "bg-red-500/10 text-red-400 border border-red-500/30"
                         }`}>
                         {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-                        {isConnected ? "Live" : "Offline"}
+                        {status === "open" ? "Live" : "Offline"}
                     </div>
-
-                    {/* Auto Refresh Toggle */}
-                    <button
-                        onClick={() => setAutoRefresh(!autoRefresh)}
-                        className={`px-3 py-1.5 rounded-full text-sm border transition-all ${autoRefresh
-                                ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                                : "bg-gray-800 text-gray-400 border-gray-700"
-                            }`}
-                    >
-                        Auto: {autoRefresh ? "ON" : "OFF"}
-                    </button>
 
                     {/* Manual Refresh */}
                     <button
@@ -117,7 +247,7 @@ export default function DashboardPage() {
                         minute: "2-digit",
                         second: "2-digit"
                     })}
-                    {autoRefresh && <span className="text-gray-600">• Auto-refreshing every 30s</span>}
+                    <span className="text-gray-600">WebSocket stream</span>
                 </div>
             )}
 
@@ -184,6 +314,9 @@ export default function DashboardPage() {
                                 change_pct={signal.change_pct}
                                 action={signal.action}
                                 confidence={signal.confidence}
+                                sparkline={sparklineBySymbol[signal.symbol]?.values}
+                                flash={flashBySymbol[signal.symbol]}
+                                onClick={() => openSymbol(signal.symbol)}
                             />
                         ))}
                     </div>
@@ -211,8 +344,68 @@ export default function DashboardPage() {
 
             {/* Market Hours Notice */}
             <div className="mt-4 text-center text-sm text-gray-500">
-                NSE Trading Hours: 9:15 AM - 3:30 PM IST (Mon-Fri)
+                NSE Trading Hours: 9:15 AM - 3:30 PM IST (Mon-Fri) â€¢ {marketStatus.label}
             </div>
+
+            {selectedSymbol && (
+                <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+                    <div className="w-full max-w-5xl bg-gray-950 border border-gray-800 rounded-2xl p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-2xl font-semibold text-white">{selectedSymbol}</h2>
+                                <p className="text-sm text-gray-400">Price history and technical context</p>
+                            </div>
+                            <button
+                                onClick={closeModal}
+                                className="px-3 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {marketLoading && (
+                            <div className="p-4 border border-gray-800 rounded-xl bg-gray-900/40 text-gray-300">
+                                Loading market data...
+                            </div>
+                        )}
+
+                        {marketError && (
+                            <div className="p-4 border border-red-500/40 rounded-xl bg-red-500/10 text-red-300">
+                                {marketError}
+                            </div>
+                        )}
+
+                        {!marketLoading && marketData && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="p-4 border border-gray-800 rounded-xl bg-gray-900/40">
+                                        <p className="text-xs text-gray-500">Current Price</p>
+                                        <p className="text-2xl text-white font-semibold">
+                                            â‚¹{marketData.current_price.toFixed(2)}
+                                        </p>
+                                        <p className={`text-sm ${marketData.change_pct >= 0 ? "text-green-300" : "text-red-300"}`}>
+                                            {marketData.change_pct >= 0 ? "+" : ""}
+                                            {marketData.change_pct.toFixed(2)}%
+                                        </p>
+                                    </div>
+                                    <div className="p-4 border border-gray-800 rounded-xl bg-gray-900/40">
+                                        <p className="text-xs text-gray-500">Volume</p>
+                                        <p className="text-2xl text-white font-semibold">{marketData.volume.toLocaleString("en-IN")}</p>
+                                        <p className="text-sm text-gray-400">Latest daily volume</p>
+                                    </div>
+                                    {selectedSignal && (
+                                        <SignalGauge confidence={selectedSignal.confidence} action={selectedSignal.action} />
+                                    )}
+                                </div>
+
+                                <PriceChart data={marketData.history} />
+                                <TechnicalIndicators indicators={marketData.indicators} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

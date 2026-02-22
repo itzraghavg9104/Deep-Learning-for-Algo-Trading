@@ -1,6 +1,7 @@
 "use client";
 
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Sparkline } from "@/components/charts/Sparkline";
 
 interface SignalCardProps {
     symbol: string;
@@ -9,6 +10,8 @@ interface SignalCardProps {
     action: string;
     confidence: number;
     onClick?: () => void;
+    sparkline?: number[];
+    flash?: "up" | "down";
 }
 
 export function SignalCard({
@@ -18,6 +21,8 @@ export function SignalCard({
     action,
     confidence,
     onClick,
+    sparkline,
+    flash,
 }: SignalCardProps) {
     const getActionColor = () => {
         switch (action) {
@@ -46,7 +51,13 @@ export function SignalCard({
     return (
         <div
             onClick={onClick}
-            className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-4 hover:border-gray-600 transition-all cursor-pointer group"
+            className={`bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-4 hover:border-gray-600 transition-all cursor-pointer group ${
+                flash === "up"
+                    ? "ring-2 ring-green-400/60 shadow-[0_0_12px_rgba(34,197,94,0.35)]"
+                    : flash === "down"
+                      ? "ring-2 ring-red-400/60 shadow-[0_0_12px_rgba(248,113,113,0.35)]"
+                      : ""
+            }`}
         >
             <div className="flex justify-between items-start mb-3">
                 <div>
@@ -80,6 +91,12 @@ export function SignalCard({
                     </p>
                 </div>
             </div>
+
+            {sparkline && sparkline.length > 0 && (
+                <div className="mt-3">
+                    <Sparkline values={sparkline} positive={isPositive} />
+                </div>
+            )}
 
             {/* Confidence bar */}
             <div className="mt-3 h-1 bg-gray-700 rounded-full overflow-hidden">

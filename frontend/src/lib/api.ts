@@ -9,6 +9,71 @@ const api = axios.create({
   },
 });
 
+const getPersistedToken = () => {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem("auth-storage");
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.token ?? null;
+  } catch {
+    return null;
+  }
+};
+
+api.interceptors.request.use((config) => {
+  const token = getPersistedToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Auth API
+export const authApi = {
+  login: async (email: string, password: string) => {
+    const formData = new URLSearchParams();
+    formData.append("username", email);
+    formData.append("password", password);
+
+    const response = await api.post("/auth/login", formData, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
+    return response.data;
+  },
+
+  register: async (email: string, password: string) => {
+    const response = await api.post("/auth/register", {
+      email,
+      password,
+    });
+    return response.data;
+  },
+
+  getMe: async () => {
+    const response = await api.get("/auth/me");
+    return response.data;
+  },
+};
+
+// Response interceptor for auth failures
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("auth-storage");
+        document.cookie = "auth_token=; Path=/; Max-Age=0; SameSite=Lax";
+        window.location.href = "/auth/login";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Trading API
 export const tradingApi = {
   getSignal: async (symbol: string, useSentiment: boolean = false) => {

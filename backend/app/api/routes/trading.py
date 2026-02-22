@@ -30,6 +30,16 @@ class SignalResponse(BaseModel):
     indicators: dict
 
 
+class MarketHistoryPoint(BaseModel):
+    """OHLCV history point for charting."""
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
 class MarketDataResponse(BaseModel):
     """Market data response model."""
     symbol: str
@@ -37,6 +47,7 @@ class MarketDataResponse(BaseModel):
     change_pct: float
     volume: int
     indicators: dict
+    history: List[MarketHistoryPoint]
 
 
 @router.get("/signals/{symbol}")
@@ -130,12 +141,24 @@ async def get_market_info(
         prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
         change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
         
+        history = []
+        for timestamp, row in data.tail(180).iterrows():
+            history.append({
+                "timestamp": timestamp.to_pydatetime(),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+                "volume": int(row["Volume"]),
+            })
+
         return MarketDataResponse(
             symbol=symbol,
-            current_price=float(current['Close']),
+            current_price=float(current["Close"]),
             change_pct=float(change_pct),
-            volume=int(current['Volume']),
-            indicators=indicators
+            volume=int(current["Volume"]),
+            indicators=indicators,
+            history=history,
         )
         
     except HTTPException:
