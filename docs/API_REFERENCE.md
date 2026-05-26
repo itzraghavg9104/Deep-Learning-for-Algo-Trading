@@ -84,7 +84,7 @@ Outputs
 
 `GET /backtest/{backtest_id}`
 
-- Not implemented.
+- Returns backtest results by ID (stored in demo_store in DEMO_MODE).
 
 ## Profile
 
@@ -114,9 +114,19 @@ Outputs
 
 - Updated preferences echo.
 
+`GET /profile/trades`
+
+Inputs
+
+- Auth required.
+
+Outputs
+
+- `{ trades: [...], total_pnl, win_rate }`
+
 ## WebSocket
 
-`WS /ws/prices`
+`WS /api/v1/ws/prices`
 
 Inputs
 

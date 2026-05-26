@@ -50,3 +50,22 @@ Inputs
 Outputs
 
 - PPO model in `backend/models/ppo_trading_final.zip`.
+- Checkpoints at 10k, 20k, 30k steps.
+
+## DeepAR Training (Optional)
+
+File: `backend/training/train_deepar.py`
+
+Why it exists
+
+- Alternative probabilistic forecasting model using DeepAR.
+
+Inputs
+
+- Historical OHLCV CSV data.
+
+Outputs
+
+- Model checkpoint.
+
+**Note:** Requires `pytorch-forecasting` (not in `requirements.txt` — install separately).

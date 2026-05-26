@@ -88,8 +88,9 @@ Outputs
 
 `frontend/src/app/trades/page.tsx`
 
-- Demo trade history with filtering and CSV export.
-- Uses local demo data.
+- Live trade history from `GET /profile/trades`.
+- Filters by symbol and date range, export CSV.
+- Loading/error states.
 
 ## Components
 

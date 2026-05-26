@@ -75,7 +75,7 @@ Outputs
 `backend/app/api/routes/backtest.py`
 
 - `POST /run` runs backtest in `BacktestService`.
-- `GET /{backtest_id}` is not implemented.
+- `GET /{backtest_id}` returns stored backtest results (demo_store or DB).
 
 Inputs
 
@@ -92,8 +92,9 @@ Demo Mode
 `backend/app/api/routes/profile.py`
 
 - `POST /risk-assessment` returns risk profile.
-- `GET /` returns demo profile.
-- `PUT /preferences` echoes updated preferences.
+- `GET /` returns authenticated user profile with preferences.
+- `PUT /preferences` persists preferences (demo_store or DB).
+- `GET /trades` returns trade history for the authenticated user.
 
 Inputs
 

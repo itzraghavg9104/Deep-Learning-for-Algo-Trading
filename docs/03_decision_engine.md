@@ -115,8 +115,8 @@ We chose Sharpe Ratio for balanced risk-reward optimization.
 ### Training Command
 
 ```bash
-cd backend
-.\venv\Scripts\python training\train_ppo.py
+cd backend && source venv/bin/activate
+python training/train_ppo.py
 ```
 
 ### Training Output

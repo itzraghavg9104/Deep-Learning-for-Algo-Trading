@@ -18,8 +18,8 @@ The Trader Behavior Module is our **USP (Unique Selling Proposition)**. Unlike t
 ![Risk Profiler](images/risk_profiler.png)
 
 The risk assessment process:
-1. User completes 10-question questionnaire
-2. System calculates risk score (0.0 - 1.0)
+1. User completes 6-question questionnaire (answers 1-4 scale)
+2. System calculates risk score (0.0 - 1.0) via simple sum normalization
 3. User is categorized: Conservative, Moderate, Growth, or Aggressive
 4. Position sizing and recommendations are adjusted accordingly
 
@@ -33,76 +33,99 @@ The risk assessment process:
 
 ### Questionnaire Structure
 
-The risk assessment consists of 10 questions across 4 categories:
+The risk assessment consists of 6 questions covering experience, loss tolerance, holding period, risk preference, capital allocation, and knowledge.
 
-| Category | Questions | Weight |
-|----------|-----------|--------|
-| Investment Horizon | 2 | 25% |
-| Loss Tolerance | 3 | 30% |
-| Income Stability | 2 | 20% |
-| Experience Level | 3 | 25% |
-
-### Sample Questions
+### Actual Questions
 
 ```python
-RISK_QUESTIONS = [
+RISK_QUESTIONNAIRE = [
     {
         "id": 1,
-        "category": "investment_horizon",
-        "question": "What is your investment time horizon?",
+        "question": "How many years of trading/investing experience do you have?",
         "options": [
-            {"value": 1, "label": "Less than 1 year"},
-            {"value": 2, "label": "1-3 years"},
-            {"value": 3, "label": "3-5 years"},
-            {"value": 4, "label": "5-10 years"},
-            {"value": 5, "label": "More than 10 years"}
+            {"value": 1, "text": "0-1 years"},
+            {"value": 2, "text": "1-3 years"},
+            {"value": 3, "text": "3-5 years"},
+            {"value": 4, "text": "5+ years"},
         ]
     },
     {
         "id": 2,
-        "category": "loss_tolerance",
-        "question": "How would you react if your portfolio dropped 20%?",
+        "question": "If your portfolio dropped 20% in a week, you would:",
         "options": [
-            {"value": 1, "label": "Sell everything immediately"},
-            {"value": 2, "label": "Sell some holdings"},
-            {"value": 3, "label": "Hold and wait"},
-            {"value": 4, "label": "Buy more at lower prices"},
-            {"value": 5, "label": "Significantly increase position"}
+            {"value": 1, "text": "Panic and sell everything"},
+            {"value": 2, "text": "Sell some positions to reduce risk"},
+            {"value": 3, "text": "Hold and wait for recovery"},
+            {"value": 4, "text": "Buy more at lower prices"},
         ]
-    }
-    # ... more questions
+    },
+    {
+        "id": 3,
+        "question": "What is your typical investment holding period?",
+        "options": [
+            {"value": 1, "text": "Less than a day (intraday)"},
+            {"value": 2, "text": "Days to weeks"},
+            {"value": 3, "text": "Weeks to months"},
+            {"value": 4, "text": "Months to years"},
+        ]
+    },
+    {
+        "id": 4,
+        "question": "Which scenario would you prefer?",
+        "options": [
+            {"value": 1, "text": "Guaranteed 5% annual return"},
+            {"value": 2, "text": "50% chance of 15% or 0% return"},
+            {"value": 3, "text": "50% chance of 25% or -10% return"},
+            {"value": 4, "text": "50% chance of 50% or -30% return"},
+        ]
+    },
+    {
+        "id": 5,
+        "question": "What percentage of your savings are you investing?",
+        "options": [
+            {"value": 1, "text": "Less than 10%"},
+            {"value": 2, "text": "10-25%"},
+            {"value": 3, "text": "25-50%"},
+            {"value": 4, "text": "More than 50%"},
+        ]
+    },
+    {
+        "id": 6,
+        "question": "How would you describe your investment knowledge?",
+        "options": [
+            {"value": 1, "text": "Beginner - learning the basics"},
+            {"value": 2, "text": "Intermediate - understand charts and trends"},
+            {"value": 3, "text": "Advanced - use technical analysis"},
+            {"value": 4, "text": "Expert - use complex strategies"},
+        ]
+    },
 ]
 ```
 
 ### Risk Score Calculation
 
+Uses min-max normalization of the sum of answers:
+
 ```python
-def calculate_risk_tolerance(answers: List[int]) -> float:
-    """
-    Calculate normalized risk tolerance from questionnaire answers.
-    
-    Args:
-        answers: List of answer values (1-5)
-    
-    Returns:
-        Risk tolerance score (0.0 - 1.0)
-    """
-    weights = [0.1, 0.15, 0.1, 0.15, 0.1, 0.1, 0.1, 0.05, 0.1, 0.05]
-    
-    weighted_sum = sum(a * w for a, w in zip(answers, weights))
-    max_score = sum(5 * w for w in weights)
-    
-    return weighted_sum / max_score
+def calculate_risk_score(answers: List[int]) -> float:
+    valid_answers = [max(1, min(4, a)) for a in answers]
+    total_points = sum(valid_answers)
+    min_possible = len(valid_answers)       # All 1s
+    max_possible = len(valid_answers) * 4   # All 4s
+    score = (total_points - min_possible) / (max_possible - min_possible)
+    return round(score, 2)
 ```
+
+For 6 questions: min=6, max=24. A score of 15 → (15-6)/(24-6) = 0.50.
 
 ### Risk Categories
 
 | Score Range | Category | Description |
 |-------------|----------|-------------|
-| 0.0 - 0.3 | **Conservative** | Capital preservation focus |
-| 0.3 - 0.5 | **Moderate** | Balanced growth and safety |
-| 0.5 - 0.7 | **Growth** | Higher returns, accepts volatility |
-| 0.7 - 1.0 | **Aggressive** | Maximum growth, high risk tolerance |
+| 0.0 - 0.25 | **Conservative** | Capital preservation focus |
+| 0.25 - 0.50 | **Moderate** | Balanced growth and safety |
+| 0.50 - 0.75 | **Growth** | Higher returns, accepts volatility |
+| 0.75 - 1.0 | **Aggressive** | Maximum growth, high risk tolerance |
 
 ---
 
@@ -251,19 +274,20 @@ POST /api/v1/profile/risk-assessment
 Content-Type: application/json
 
 {
-    "answers": [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
+    "answers": [3, 4, 2, 4, 3, 2]
 }
 ```
 
 **Response:**
 ```json
 {
-    "risk_tolerance": 0.65,
+    "risk_tolerance": 0.5,
     "category": "Growth",
+    "description": "You accept higher volatility for potential growth...",
     "recommendations": {
-        "max_position_size": 0.15,
-        "suggested_stop_loss": 0.05,
-        "suggested_take_profit": 0.10
+        "max_position_size": 0.13,
+        "suggested_stop_loss": 0.10,
+        "suggested_take_profit": 0.20
     }
 }
 ```
@@ -273,22 +297,22 @@ Content-Type: application/json
 ## Example Usage
 
 ```python
-from app.trader_behavior import (
-    RiskProfiler,
-    PositionSizer,
-    BreakEvenTracker
-)
+from app.trader_behavior.risk_profiler import calculate_risk_score, get_risk_category
+from app.trader_behavior.position_sizer import calculate_position_size
+from app.trader_behavior.breakeven_tracker import BreakEvenTracker
 
 # 1. Profile the trader
-profiler = RiskProfiler()
-answers = [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
-risk_tolerance = profiler.calculate(answers)
-print(f"Risk Tolerance: {risk_tolerance:.2f}")
-# Output: Risk Tolerance: 0.65
+answers = [3, 4, 2, 4, 3, 2]
+risk_tolerance = calculate_risk_score(answers)
+category, description = get_risk_category(risk_tolerance)
+print(f"Risk Tolerance: {risk_tolerance:.2f} ({category})")
+# Output: Risk Tolerance: 0.50 (Growth)
 
 # 2. Calculate position size
-sizer = PositionSizer(capital=100000, risk_tolerance=risk_tolerance)
-position = sizer.kelly_criterion(
+position = calculate_position_size(
+    capital=100000,
+    risk_tolerance=risk_tolerance,
+    method="kelly",
     win_rate=0.55,
     avg_win=0.03,
     avg_loss=0.02

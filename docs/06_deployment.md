@@ -8,8 +8,8 @@ This guide covers deploying the Algo Trading System in development and productio
 
 ## Prerequisites
 
-- **Python**: 3.11+
-- **Node.js**: 18+
+- **Python**: 3.12+
+- **Node.js**: 20+
 - **Docker**: 24+ (optional but recommended)
 - **PostgreSQL**: 15+ (or use Docker)
 - **Redis**: 7+ (or use Docker)
@@ -47,9 +47,6 @@ pip install -r requirements.txt
 copy .env.example .env
 # Edit .env with your settings
 
-# Run database migrations
-alembic upgrade head
-
 # Start development server
 uvicorn app.main:app --reload --port 8000
 ```
@@ -62,10 +59,6 @@ cd frontend
 
 # Install dependencies
 npm install
-
-# Set environment variables
-copy .env.example .env.local
-# Edit .env.local with your settings
 
 # Start development server
 npm run dev
@@ -88,24 +81,20 @@ npm run dev
 APP_ENV=development
 DEBUG=true
 SECRET_KEY=your-secret-key-here
+DEMO_MODE=True            # No Postgres/Redis needed when True
 
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/algotrading
+# Database (not required in DEMO_MODE)
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/algotrading
 
-# Redis
+# Redis (not required in DEMO_MODE)
 REDIS_URL=redis://localhost:6379/0
-
-# Market Data
-YFINANCE_ENABLED=true
-NEWS_API_KEY=your-newsapi-key
 
 # ML Models
 MODEL_PATH=./models
-DEEPAR_MODEL=deepar_v1.pt
-PPO_MODEL=ppo_agent_v1.zip
 
 # JWT
 JWT_SECRET=your-jwt-secret
+JWT_ALGORITHM=HS256
 JWT_EXPIRY_HOURS=24
 ```
 
@@ -113,7 +102,6 @@ JWT_EXPIRY_HOURS=24
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
-NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
 ```
 
 ---
@@ -126,6 +114,22 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=algotrading
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
   backend:
     build: ./backend
     ports:
@@ -136,8 +140,6 @@ services:
     depends_on:
       - db
       - redis
-    volumes:
-      - ./models:/app/models
 
   frontend:
     build: ./frontend
@@ -148,27 +150,8 @@ services:
     depends_on:
       - backend
 
-  db:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=algotrading
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
 volumes:
   postgres_data:
-  redis_data:
 ```
 
 ### Build and Run
@@ -192,25 +175,22 @@ docker-compose down
 ## Backend Dockerfile
 
 ```dockerfile
-# backend/Dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
-
-# Download ML models (if not mounted)
-# RUN python scripts/download_models.py
 
 EXPOSE 8000
 
@@ -222,65 +202,51 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ## Frontend Dockerfile
 
 ```dockerfile
-# frontend/Dockerfile
-FROM node:18-alpine AS builder
+FROM node:20-slim
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY . .
 RUN npm run build
 
-FROM node:18-alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["npm", "start"]
 ```
 
 ---
 
 ## Model Training
 
-### Train DeepAR Model
+### Train LSTM Model
 
 ```bash
-cd backend
-
-# Activate environment
-venv\Scripts\activate
-
-# Train on historical data
-python training/train_deepar.py \
-    --symbols AAPL,GOOGL,MSFT \
-    --start-date 2018-01-01 \
-    --end-date 2023-12-31 \
-    --epochs 100 \
-    --batch-size 32 \
-    --output models/deepar_v1.pt
+cd backend && source venv/bin/activate
+python training/train_lstm.py
 ```
+
+Trains on NIFTY 50 data from `backend/data/training_data.csv`. Saves to `backend/models/lstm_final.pt`.
 
 ### Train PPO Agent
 
 ```bash
-python training/train_ppo.py \
-    --symbol AAPL \
-    --start-date 2018-01-01 \
-    --end-date 2023-12-31 \
-    --total-timesteps 1000000 \
-    --eval-freq 10000 \
-    --output models/ppo_agent_v1.zip
+cd backend && source venv/bin/activate
+python training/train_ppo.py
 ```
+
+Trains on RELIANCE.NS CSV from `backend/data/raw/`. Saves to `backend/models/ppo_trading_final.zip`.
+
+### (Optional) Train DeepAR
+
+```bash
+cd backend && source venv/bin/activate
+python training/train_deepar.py
+```
+
+Requires `pytorch-forecasting` (not in requirements.txt — install separately).
 
 ---
 
@@ -370,8 +336,8 @@ npm run dev
 
 ```bash
 # Verify model files exist
-ls -la models/
+ls -la backend/models/
 
-# Test model loading
-python -c "from app.models.ml import load_models; load_models()"
+# Test prediction service
+python -c "from app.services.prediction_service import PredictionService; s=PredictionService(); print(s.predict('RELIANCE.NS'))"
 ```

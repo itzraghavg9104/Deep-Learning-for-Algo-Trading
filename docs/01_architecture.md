@@ -91,12 +91,22 @@ The data flows through the system in three stages:
 
 | Layer | Technology | Version |
 |-------|------------|---------|
-| Backend | FastAPI | 0.100+ |
+| Backend Framework | FastAPI | 0.100+ |
 | ML Training | PyTorch | 2.0+ |
-| RL Agent | Stable-Baselines3 | 2.0+ |
-| Frontend | Next.js | 14+ |
-| Styling | TailwindCSS | 3.0+ |
-| State Management | Zustand | 4.0+ |
+| RL Agent | Stable-Baselines3 (PPO) | 2.0+ |
+| RL Environment | Gymnasium | 0.29+ |
+| Data Processing | Pandas, NumPy, pandas-ta | latest |
+| Market Data | yfinance | latest |
+| Frontend Framework | Next.js | 16 |
+| UI Library | React | 19 |
+| Language | TypeScript | 5 (strict) |
+| Styling | TailwindCSS | 4 |
+| State Management | Zustand | 5 |
+| Charts | Recharts | latest |
+| Forms | React Hook Form + Zod | latest |
+| HTTP Client | Axios | latest |
+| Icons | Lucide-React | latest |
+| Auth | python-jose + passlib (backend), JWT (frontend) | latest |
 
 ---
 
@@ -128,7 +138,7 @@ Deep-Learning-for-Algo-Trading/
 
 ## Next Steps
 
-1. **Database Integration**: PostgreSQL for user profiles and trade history
-2. **Authentication**: JWT-based user authentication
-3. **Docker Deployment**: Containerized production deployment
-4. **Real-time WebSocket**: Live price updates
+1. **Tests**: Add pytest tests for routes and services (`backend/tests/`)
+2. **Live Trade Execution**: Connect signals to a broker API for actual trading
+3. **Cache Layer**: Use Redis for caching market data and reducing yfinance calls
+4. **CI/CD**: GitHub Actions for lint → test → build on PR

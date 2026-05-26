@@ -104,8 +104,8 @@ The system supports all NIFTY 50 constituents including:
 
 ```bash
 # To train the model
-cd backend
-.\venv\Scripts\python training\train_lstm.py
+cd backend && source venv/bin/activate
+python training/train_lstm.py
 ```
 
 ---

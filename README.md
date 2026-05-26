@@ -19,8 +19,8 @@ This platform combines **Deep Learning** and **Reinforcement Learning** to creat
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+
+- Python 3.12+
+- Node.js 20+
 - Git
 
 ### Installation
@@ -33,7 +33,8 @@ cd Deep-Learning-for-Algo-Trading
 # Backend setup
 cd backend
 python -m venv venv
-.\venv\Scripts\activate  # Windows
+source venv/bin/activate          # Unix
+# .\venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 
 # Frontend setup
@@ -45,18 +46,18 @@ npm install
 
 ```bash
 # Terminal 1: Backend
-cd backend
-.\venv\Scripts\activate
+cd backend && source venv/bin/activate
 uvicorn app.main:app --reload
 
 # Terminal 2: Frontend
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
 **Access:**
 - Frontend: http://localhost:3000
 - API Docs: http://localhost:8000/docs
+
+**Demo Mode:** No Postgres/Redis required. The app runs fully in-memory by default (`DEMO_MODE=True`). Copy `backend/.env.example` to `backend/.env` to override.
 
 ---
 
@@ -164,8 +165,8 @@ Deep-Learning-for-Algo-Trading/
 ### Download Data
 
 ```bash
-cd backend
-.\venv\Scripts\python training\download_data.py
+cd backend && source venv/bin/activate
+python training/download_data.py
 ```
 
 Downloads 5 years of NIFTY 50 data (20 stocks) to `data/training_data.csv`.
@@ -173,7 +174,7 @@ Downloads 5 years of NIFTY 50 data (20 stocks) to `data/training_data.csv`.
 ### Train LSTM
 
 ```bash
-.\venv\Scripts\python training\train_lstm.py
+python training/train_lstm.py
 ```
 
 Trains price prediction model. Saves to `models/lstm_final.pt`.
@@ -181,7 +182,7 @@ Trains price prediction model. Saves to `models/lstm_final.pt`.
 ### Train PPO
 
 ```bash
-.\venv\Scripts\python training\train_ppo.py
+python training/train_ppo.py
 ```
 
 Trains RL agent. Saves to `models/ppo_trading_final.zip`.
@@ -193,11 +194,19 @@ Trains RL agent. Saves to `models/ppo_trading_final.zip`.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/trading/signals/{symbol}` | GET | AI trading signal |
+| `/api/v1/trading/market/{symbol}` | GET | Market data + indicators |
 | `/api/v1/trading/watchlist` | GET | Top NSE stocks |
 | `/api/v1/backtest/run` | POST | Run backtest |
+| `/api/v1/backtest/{id}` | GET | Get backtest results |
 | `/api/v1/profile/risk-assessment` | POST | Risk profiling |
+| `/api/v1/profile/` | GET | User profile |
+| `/api/v1/profile/preferences` | PUT | Update preferences |
+| `/api/v1/profile/trades` | GET | Trade history |
+| `/api/v1/auth/register` | POST | Register |
+| `/api/v1/auth/login` | POST | Login |
+| `/api/v1/auth/me` | GET | Current user |
 
-Full API docs at `http://localhost:8000/docs`
+Full API docs at `http://localhost:8000/docs` (Swagger) and `http://localhost:8000/redoc` (ReDoc).
 
 ---
 
@@ -205,9 +214,9 @@ Full API docs at `http://localhost:8000/docs`
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | FastAPI, Python 3.10+ |
-| **ML** | PyTorch, Stable-Baselines3 |
-| **Frontend** | Next.js 14, TailwindCSS |
+| **Backend** | FastAPI, Python 3.12 |
+| **ML** | PyTorch, Stable-Baselines3 (PPO), Gymnasium |
+| **Frontend** | Next.js 16, React 19, TypeScript, TailwindCSS 4, Zustand, Recharts, React Hook Form + Zod, Axios, Lucide-React |
 | **Data** | yfinance, pandas-ta |
 
 ---

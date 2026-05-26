@@ -23,6 +23,10 @@ Production: https://api.yourdomain.com/api/v1
 | `/profile/risk-assessment` | POST | Submit risk questionnaire |
 | `/profile/` | GET | Get user profile |
 | `/profile/preferences` | PUT | Update preferences |
+| `/profile/trades` | GET | Get trade history |
+| `/auth/register` | POST | Register user |
+| `/auth/login` | POST | Login, returns JWT |
+| `/auth/me` | GET | Get current user |
 
 ---
 
@@ -68,9 +72,9 @@ GET /api/v1/trading/signals/{symbol}
 ```
 
 **Action Values:**
-- `BUY`: Predicted price increase > 1%
-- `SELL`: Predicted price decrease > 1%
-- `HOLD`: Predicted change within ±1%
+- `BUY`: Confidence >= 0.6 and predicted price increase
+- `SELL`: Confidence >= 0.6 and predicted price decrease
+- `HOLD`: Low confidence or no clear direction
 
 ---
 
@@ -178,9 +182,24 @@ POST /api/v1/backtest/run
 
 ```json
 {
-    "backtest_id": "bt_abc123",
-    "status": "running",
-    "message": "Backtest started"
+    "backtest_id": "1",
+    "symbol": "RELIANCE.NS",
+    "total_return": 0.1528,
+    "sharpe_ratio": 1.45,
+    "max_drawdown": -0.085,
+    "win_rate": 0.62,
+    "profit_factor": 1.8,
+    "total_trades": 45,
+    "final_value": 115280.0,
+    "trades": [
+        {
+            "date": "2023-01-15",
+            "action": "BUY",
+            "price": 1450.00,
+            "quantity": 10
+        }
+    ],
+    "equity_curve": [100000, 100500, 101200, ...]
 }
 ```
 
@@ -237,7 +256,7 @@ POST /api/v1/profile/risk-assessment
 
 ```json
 {
-    "answers": [3, 4, 2, 5, 3, 4, 2, 3, 4, 3]
+    "answers": [3, 4, 2, 4, 3, 2]
 }
 ```
 
@@ -245,14 +264,13 @@ POST /api/v1/profile/risk-assessment
 
 ```json
 {
-    "risk_tolerance": 0.65,
+    "risk_tolerance": 0.5,
     "category": "Growth",
-    "description": "You have a growth-oriented investment profile with moderate-to-high risk tolerance.",
+    "description": "You accept higher volatility for potential growth...",
     "recommendations": {
-        "max_position_size": 0.15,
-        "suggested_stop_loss": 0.05,
-        "suggested_take_profit": 0.10,
-        "rebalancing_frequency": "monthly"
+        "max_position_size": 0.13,
+        "suggested_stop_loss": 0.10,
+        "suggested_take_profit": 0.20
     }
 }
 ```
@@ -358,14 +376,6 @@ All endpoints return errors in the following format:
 | 500 | Internal Server Error |
 
 ---
-
-## Rate Limiting
-
-| Tier | Requests/minute |
-|------|-----------------|
-| Free | 60 |
-| Pro | 600 |
-| Enterprise | Unlimited |
 
 ---
 
