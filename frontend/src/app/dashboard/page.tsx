@@ -399,7 +399,7 @@ export default function DashboardPage() {
                                 </div>
 
                                 <PriceChart data={marketData.history} />
-                                <TechnicalIndicators indicators={marketData.indicators} />
+                                <TechnicalIndicators indicators={marketData.indicators as Record<string, string | number | boolean | null | undefined>} />
                             </div>
                         )}
                     </div>

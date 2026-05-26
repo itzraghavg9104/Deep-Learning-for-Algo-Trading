@@ -96,5 +96,20 @@ async def get_backtest_result(backtest_id: str):
     """
     Get backtest results by ID.
     """
-    # TODO: Retrieve from database
+    try:
+        bid = int(backtest_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid backtest ID")
+
+    if settings.DEMO_MODE:
+        bt = demo_store.get_backtest(bid)
+        if bt is None:
+            raise HTTPException(status_code=404, detail="Backtest not found")
+        return {
+            "backtest_id": str(bt.id),
+            "symbol": bt.symbol,
+            "created_at": bt.created_at.isoformat(),
+            **bt.result,
+        }
+
     raise HTTPException(status_code=404, detail="Backtest not found")

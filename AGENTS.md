@@ -1,39 +1,80 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `backend/`: FastAPI service and ML/trading logic.
-- `backend/app/api/routes/`: REST endpoints (`trading.py`, `backtest.py`, `profile.py`, `auth.py`).
-- `backend/app/layer1_data_processing/`, `backend/app/layer2_decision/`, `backend/app/trader_behavior/`: core domain modules.
-- `backend/training/`: model/data scripts (`download_data.py`, `train_lstm.py`, `train_ppo.py`).
-- `backend/models/` and `backend/data/`: trained artifacts and datasets.
-- `frontend/src/app/`: Next.js App Router pages; `frontend/src/components/`: UI components; `frontend/src/lib/`: API/store utilities.
-- `docs/`: architecture and API documentation; `references/`: research material.
+## Stack & Versions
+- **Backend**: Python 3.12, FastAPI, PyTorch, Stable-Baselines3 (PPO), Gymnasium.
+- **Frontend**: Next.js 16, React 19, TailwindCSS 4, TypeScript strict, Zustand, Recharts, React Hook Form + Zod, Axios, Lucide-React.
+- **Infra**: PostgreSQL 15, Redis 7, Docker Compose.
 
-## Build, Test, and Development Commands
-- Backend setup: `cd backend && python -m venv venv && .\venv\Scripts\activate && pip install -r requirements.txt`
-- Run backend: `cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload`
-- Frontend setup: `cd frontend && npm install`
-- Run frontend dev server: `cd frontend && npm run dev`
-- Frontend production checks: `cd frontend && npm run lint && npm run build`
-- Full stack with containers: `docker-compose up --build` (frontend `:3000`, backend `:8000`, Postgres `:5432`, Redis `:6379`).
+## Quick Start
+```bash
+# Backend
+cd backend && python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload                              # dev :8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000            # prod
 
-## Coding Style & Naming Conventions
-- Python: PEP 8, 4-space indentation, `snake_case` for functions/files, `PascalCase` for classes.
-- TypeScript/React: 4-space indentation in current codebase, component files in `PascalCase` (for example `SignalCard.tsx`), hooks/utilities in `camelCase`.
-- Keep modules focused by layer (data processing, decision, behavior) and avoid cross-layer leakage.
-- Frontend linting uses ESLint (`frontend/eslint.config.mjs` with Next core-web-vitals + TypeScript rules).
+# Frontend
+cd frontend && npm install
+npm run dev                                                # dev :3000
+npm run lint && npm run build                              # pre-PR checks
 
-## Testing Guidelines
-- Backend test dependencies are available (`pytest`, `pytest-asyncio`), but there are currently no committed tests in `backend/tests/`.
-- Add backend tests under `backend/tests/` using `test_*.py`; run with `cd backend && .\venv\Scripts\activate && pytest`.
-- No frontend test runner is configured yet; at minimum, run `npm run lint` and `npm run build` before PRs.
+# Full stack (Docker)
+docker-compose up --build
+```
 
-## Commit & Pull Request Guidelines
-- Follow existing history style: short imperative subjects (for example, `Add backend...`, `Update documentation...`).
-- Keep commits scoped to one concern (API, frontend, training, docs).
-- PRs should include: purpose, key changes, validation steps run, and linked issue/task.
-- Include screenshots/GIFs for UI changes and example request/response payloads for API changes.
+## Demo Mode (No Postgres/Redis)
+`backend/app/config.py` sets `DEMO_MODE: bool = True` by default -- the app works without any database or Redis. Override via `backend/.env`:
+```env
+DEMO_MODE=False
+```
+Copy `backend/.env.example` to `backend/.env` for custom config. Frontend uses `NEXT_PUBLIC_API_URL` (default `http://localhost:8000/api/v1`).
 
-## Security & Configuration Tips
-- Copy `backend/.env.example` to `.env` for local secrets; never commit credentials or model artifacts with sensitive data.
-- Verify `NEXT_PUBLIC_API_URL`, `DATABASE_URL`, and `REDIS_URL` per environment before deploying.
+## Architecture (Three Layers)
+1. **`backend/app/layer1_data_processing/`** -- market data (yfinance), technical indicators (pandas-ta), state builder for RL.
+2. **`backend/app/layer2_decision/`** -- custom Gymnasium trading env, PPO agent (Stable-Baselines3), Sharpe-ratio reward.
+3. **`backend/app/trader_behavior/`** -- risk profiler (0.0-1.0), Kelly Criterion position sizer, breakeven tracker.
+
+Fallback: prediction service (`backend/app/services/prediction_service.py`) uses rule-based signals if models unavailable.
+
+## API Endpoints (prefix `/api/v1`)
+| Prefix         | File                                |
+|----------------|-------------------------------------|
+| `/trading`     | `backend/app/api/routes/trading.py` |
+| `/backtest`    | `backend/app/api/routes/backtest.py`|
+| `/profile`     | `backend/app/api/routes/profile.py` |
+| `/auth`        | `backend/app/api/routes/auth.py`    |
+| WebSocket      | `backend/app/api/websocket.py`      |
+
+Docs at `http://localhost:8000/docs`.
+
+## ML Training Pipeline
+```bash
+cd backend && source venv/bin/activate
+python training/download_data.py       # 5y NIFTY 50 -> data/training_data.csv
+python training/train_lstm.py          # -> models/lstm_final.pt
+python training/train_ppo.py           # -> models/ppo_trading_final.zip
+```
+Model files (`*.pt`, `*.zip`) are gitignored.
+
+## Market Data Conventions
+- NSE symbols: `.NS` suffix (`RELIANCE.NS`)
+- BSE symbols: `.BO` suffix
+- `normalize_symbol()` in `market_data.py` handles suffix normalization.
+
+## Frontend Routing & Auth
+- **Protected pages** (redirect to `/auth/login` if unauthenticated): `/dashboard`, `/profile`, `/backtest`, `/trades` -- defined in `frontend/src/middleware.ts`.
+- Auth pages redirect to `/dashboard` if already logged in.
+- JWT stored in localStorage under `auth-storage` key; cookie `auth_token` set for middleware.
+
+## Testing
+- No tests committed yet (`backend/tests/` is empty, no frontend test runner configured).
+- Backend: `pytest` + `pytest-asyncio` available. New tests go in `backend/tests/test_*.py`.
+- Frontend: at minimum `npm run lint && npm run build` before PRs.
+
+## Path Aliases
+- Frontend: `@/*` maps to `src/*` (tsconfig paths).
+- Backend: standard Python imports, all app code under `backend/app/`.
+
+## Notable Config
+- CORS origins: `["http://localhost:3000", "http://127.0.0.1:3000"]` -- update in `config.py` for other domains.
+- `.gitignore` excludes: `__pycache__/`, `.env`, `venv/`, `node_modules/`, `.next/`, `*.pt`, `*.zip`, `*.pth`, `*.db`.

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -9,6 +10,8 @@ import {
     History,
     ClipboardList,
 } from "lucide-react";
+import { profileApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth-store";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -20,6 +23,22 @@ const navItems = [
 
 export function Sidebar() {
     const pathname = usePathname();
+    const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+    const [riskTolerance, setRiskTolerance] = useState(0.5);
+    const [riskCategory, setRiskCategory] = useState("Moderate");
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        profileApi.getProfile().then((data) => {
+            const rp = data.risk_profile;
+            if (rp) {
+                setRiskTolerance(rp.tolerance ?? 0.5);
+                setRiskCategory(rp.category ?? "Moderate");
+            }
+        }).catch(() => {});
+    }, [isAuthenticated]);
+
+    const tolerancePct = Math.round(riskTolerance * 100);
 
     return (
         <aside className="w-64 bg-gray-900/50 backdrop-blur-xl border-r border-gray-800 min-h-screen p-4">
@@ -59,11 +78,14 @@ export function Sidebar() {
             {/* Risk Profile Card */}
             <div className="mt-8 p-4 bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-xl">
                 <p className="text-xs text-gray-400 mb-1">Risk Profile</p>
-                <p className="text-lg font-semibold text-white">Moderate</p>
+                <p className="text-lg font-semibold text-white">{riskCategory}</p>
                 <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full w-1/2 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full" />
+                    <div
+                        className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full transition-all"
+                        style={{ width: `${tolerancePct}%` }}
+                    />
                 </div>
-                <p className="text-xs text-gray-500 mt-2">50% Risk Tolerance</p>
+                <p className="text-xs text-gray-500 mt-2">{tolerancePct}% Risk Tolerance</p>
             </div>
         </aside>
     );

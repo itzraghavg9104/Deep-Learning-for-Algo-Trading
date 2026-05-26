@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { tradesApi } from "@/lib/api";
 
 type Trade = {
   id: string;
@@ -12,20 +13,30 @@ type Trade = {
   pnl: number;
 };
 
-const SAMPLE_TRADES: Trade[] = [
-  { id: "T001", date: "2026-02-14", symbol: "RELIANCE.NS", action: "BUY", quantity: 20, price: 1540, pnl: 0 },
-  { id: "T002", date: "2026-02-16", symbol: "RELIANCE.NS", action: "SELL", quantity: 20, price: 1575, pnl: 700 },
-  { id: "T003", date: "2026-02-17", symbol: "TCS.NS", action: "BUY", quantity: 10, price: 3200, pnl: 0 },
-  { id: "T004", date: "2026-02-20", symbol: "TCS.NS", action: "SELL", quantity: 10, price: 3170, pnl: -300 },
-];
-
 export default function TradesPage() {
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [totalPnl, setTotalPnl] = useState(0);
+  const [winRate, setWinRate] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [symbolFilter, setSymbolFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  useEffect(() => {
+    tradesApi
+      .getTradeHistory()
+      .then((data) => {
+        setTrades(data.trades ?? []);
+        setTotalPnl(data.total_pnl ?? 0);
+        setWinRate(data.win_rate ?? 0);
+      })
+      .catch(() => setError("Failed to load trade history"))
+      .finally(() => setLoading(false));
+  }, []);
+
   const filtered = useMemo(() => {
-    return SAMPLE_TRADES.filter((trade) => {
+    return trades.filter((trade) => {
       const symbolOk = symbolFilter
         ? trade.symbol.toLowerCase().includes(symbolFilter.toLowerCase())
         : true;
@@ -33,10 +44,18 @@ export default function TradesPage() {
       const toOk = toDate ? trade.date <= toDate : true;
       return symbolOk && fromOk && toOk;
     });
-  }, [symbolFilter, fromDate, toDate]);
+  }, [trades, symbolFilter, fromDate, toDate]);
 
-  const totalPnl = useMemo(
+  const filteredPnl = useMemo(
     () => filtered.reduce((sum, trade) => sum + trade.pnl, 0),
+    [filtered],
+  );
+
+  const filteredWinRate = useMemo(
+    () =>
+      filtered.length
+        ? ((filtered.filter((t) => t.pnl > 0).length / filtered.length) * 100).toFixed(0)
+        : "0",
     [filtered],
   );
 
@@ -45,7 +64,7 @@ export default function TradesPage() {
     const rows = filtered.map((trade) =>
       [trade.id, trade.date, trade.symbol, trade.action, trade.quantity, trade.price, trade.pnl].join(","),
     );
-    const blob = new Blob([header, ...rows].join("\n"), { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -54,13 +73,29 @@ export default function TradesPage() {
     URL.revokeObjectURL(url);
   };
 
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-gray-950 p-6">
+        <div className="max-w-6xl mx-auto text-center text-gray-400 pt-20">Loading trade history...</div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-gray-950 p-6">
+        <div className="max-w-6xl mx-auto text-center text-red-400 pt-20">{error}</div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gray-950 p-6">
       <div className="max-w-6xl mx-auto space-y-5">
         <div>
           <h1 className="text-3xl font-bold text-white">Trade History</h1>
           <p className="text-gray-400 mt-1">
-            Filter and export trades. Live backend trade history endpoint is still pending.
+            {trades.length} trades found &middot; Total P&L: INR {totalPnl.toFixed(2)} &middot; Win Rate: {(winRate * 100).toFixed(0)}%
           </p>
         </div>
 
@@ -95,47 +130,44 @@ export default function TradesPage() {
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <StatCard label="Filtered Trades" value={filtered.length.toString()} />
-          <StatCard
-            label="Realized P&L"
-            value={`INR ${totalPnl.toFixed(2)}`}
-            positive={totalPnl >= 0}
-          />
-          <StatCard
-            label="Win Rate"
-            value={`${filtered.length ? ((filtered.filter((t) => t.pnl > 0).length / filtered.length) * 100).toFixed(0) : 0}%`}
-          />
+          <StatCard label="Filtered P&L" value={`INR ${filteredPnl.toFixed(2)}`} positive={filteredPnl >= 0} />
+          <StatCard label="Win Rate" value={`${filteredWinRate}%`} />
         </section>
 
-        <section className="p-4 rounded-xl border border-gray-800 bg-gray-900/40 overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-gray-800">
-                <th className="py-2 pr-3">Date</th>
-                <th className="py-2 pr-3">Symbol</th>
-                <th className="py-2 pr-3">Action</th>
-                <th className="py-2 pr-3">Qty</th>
-                <th className="py-2 pr-3">Price</th>
-                <th className="py-2 pr-3">P&L</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((trade) => (
-                <tr key={trade.id} className="border-b border-gray-900">
-                  <td className="py-2 pr-3 text-gray-200">{trade.date}</td>
-                  <td className="py-2 pr-3 text-gray-200">{trade.symbol}</td>
-                  <td className={`py-2 pr-3 ${trade.action === "BUY" ? "text-green-300" : "text-red-300"}`}>
-                    {trade.action}
-                  </td>
-                  <td className="py-2 pr-3 text-gray-200">{trade.quantity}</td>
-                  <td className="py-2 pr-3 text-gray-200">{trade.price.toFixed(2)}</td>
-                  <td className={`py-2 pr-3 ${trade.pnl >= 0 ? "text-green-300" : "text-red-300"}`}>
-                    {trade.pnl.toFixed(2)}
-                  </td>
+        {filtered.length === 0 ? (
+          <p className="text-gray-500 text-center py-10">No trades match your filters.</p>
+        ) : (
+          <section className="p-4 rounded-xl border border-gray-800 bg-gray-900/40 overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400 border-b border-gray-800">
+                  <th className="py-2 pr-3">Date</th>
+                  <th className="py-2 pr-3">Symbol</th>
+                  <th className="py-2 pr-3">Action</th>
+                  <th className="py-2 pr-3">Qty</th>
+                  <th className="py-2 pr-3">Price</th>
+                  <th className="py-2 pr-3">P&L</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {filtered.map((trade) => (
+                  <tr key={trade.id} className="border-b border-gray-900">
+                    <td className="py-2 pr-3 text-gray-200">{trade.date}</td>
+                    <td className="py-2 pr-3 text-gray-200">{trade.symbol}</td>
+                    <td className={`py-2 pr-3 ${trade.action === "BUY" ? "text-green-300" : "text-red-300"}`}>
+                      {trade.action}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-200">{trade.quantity}</td>
+                    <td className="py-2 pr-3 text-gray-200">{trade.price.toFixed(2)}</td>
+                    <td className={`py-2 pr-3 ${trade.pnl >= 0 ? "text-green-300" : "text-red-300"}`}>
+                      {trade.pnl.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
       </div>
     </main>
   );

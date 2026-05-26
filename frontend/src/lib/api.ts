@@ -132,4 +132,12 @@ export const profileApi = {
   },
 };
 
+// Trades API
+export const tradesApi = {
+  getTradeHistory: async () => {
+    const response = await api.get("/profile/trades");
+    return response.data;
+  },
+};
+
 export default api;

@@ -1,11 +1,14 @@
 """
 User profile and risk assessment API routes.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
 from app.trader_behavior.risk_profiler import calculate_risk_score, get_risk_category
+from app.api.routes.auth import get_current_user
+from app.config import settings
+from app.services.demo_store import demo_store
 
 router = APIRouter()
 
@@ -67,33 +70,68 @@ async def submit_risk_assessment(request: RiskAssessmentRequest):
 
 
 @router.get("/")
-async def get_profile():
+async def get_profile(current_user=Depends(get_current_user)):
     """
     Get current user profile.
     """
-    # TODO: Get from database based on authenticated user
-    return {
-        "id": "demo_user",
-        "name": "Demo Trader",
-        "risk_profile": {
-            "tolerance": 0.5,
-            "category": "Moderate"
-        },
-        "preferences": {
-            "use_sentiment": False,
-            "preferred_timeframe": "swing",
-            "symbols": ["RELIANCE.NS", "TCS.NS", "INFY.NS"]
+    if settings.DEMO_MODE:
+        profile = demo_store.get_or_create_profile(current_user.id)
+        return {
+            "id": current_user.id,
+            "email": current_user.email,
+            "risk_profile": {
+                "tolerance": profile.risk_tolerance,
+                "category": profile.risk_category,
+            },
+            "preferences": {
+                "use_sentiment": profile.use_sentiment,
+                "preferred_timeframe": profile.preferred_timeframe,
+                "symbols": list(profile.symbols),
+            },
         }
+
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
     }
 
 
 @router.put("/preferences")
-async def update_preferences(preferences: UserPreferences):
+async def update_preferences(preferences: UserPreferences, current_user=Depends(get_current_user)):
     """
     Update user trading preferences.
     """
-    # TODO: Save to database
+    if settings.DEMO_MODE:
+        demo_store.update_profile(
+            current_user.id,
+            use_sentiment=preferences.use_sentiment,
+            preferred_timeframe=preferences.preferred_timeframe,
+            symbols=tuple(preferences.symbols),
+        )
+        return {
+            "message": "Preferences updated",
+            "preferences": preferences.model_dump(),
+        }
+
     return {
         "message": "Preferences updated",
-        "preferences": preferences.model_dump()
+        "preferences": preferences.model_dump(),
     }
+
+
+@router.get("/trades")
+async def get_trade_history(current_user=Depends(get_current_user)):
+    """
+    Get trade history for the current user.
+    """
+    if settings.DEMO_MODE:
+        trades = demo_store.get_user_trades(current_user.id)
+        total_pnl = sum(t.get("pnl", 0.0) for t in trades)
+        winning = sum(1 for t in trades if t.get("pnl", 0.0) > 0)
+        return {
+            "trades": trades,
+            "total_pnl": total_pnl,
+            "win_rate": round(winning / len(trades), 2) if trades else 0.0,
+        }
+
+    return {"trades": [], "total_pnl": 0.0, "win_rate": 0.0}
