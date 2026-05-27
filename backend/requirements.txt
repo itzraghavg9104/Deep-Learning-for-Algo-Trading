@@ -34,6 +34,8 @@ transformers>=4.35.0
 # Auth
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+firebase-admin>=6.6.0
+google-cloud-firestore>=2.20.0
 
 # HTTP
 httpx>=0.25.0

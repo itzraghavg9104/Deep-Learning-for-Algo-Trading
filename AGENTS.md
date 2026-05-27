@@ -78,3 +78,26 @@ Model files (`*.pt`, `*.zip`) are gitignored.
 ## Notable Config
 - CORS origins: `["http://localhost:3000", "http://127.0.0.1:3000"]` -- update in `config.py` for other domains.
 - `.gitignore` excludes: `__pycache__/`, `.env`, `venv/`, `node_modules/`, `.next/`, `*.pt`, `*.zip`, `*.pth`, `*.db`.
+
+## Verified Runtime Behavior (Important for Agents)
+- **Demo mode defaults ON** (`DEMO_MODE=True` in `backend/app/config.py`), so DB/Redis are optional for local dev.
+- **Demo auth behavior is intentionally permissive**:
+  - `/auth/login` auto-creates users and skips password verification in demo mode.
+  - `/auth/me` can auto-provision token subjects not yet present.
+- **Frontend auth contract**:
+  - Zustand persistence key: `auth-storage` (token stored in localStorage).
+  - Middleware auth cookie: `auth_token` (used for route guarding in `frontend/src/middleware.ts`).
+- **WebSocket contract**:
+  - Endpoint: `/api/v1/ws/prices`
+  - Actions accepted: `subscribe`, `unsubscribe`, `set`, `ping`
+  - Price pushes occur about every 30s while symbols are subscribed.
+
+## Working Directory Rules (Avoid Path Bugs)
+- Run backend app/training commands from `backend/` unless a script explicitly expects repo root.
+- Relative model paths are resolved from backend process CWD (`MODEL_PATH=./models` by default).
+- `BacktestService` currently uses `data_dir="backend/data/raw"` internally; if backend is launched from `backend/`, this may resolve incorrectly (double `backend/...`). Prefer validating CWD/path assumptions before editing related code.
+
+## Current Inconsistencies to Be Aware Of
+- `backend/.env.example` does **not** currently include `DEMO_MODE`, even though runtime supports it.
+- `backend/Dockerfile` has a malformed multiline `RUN apt-get ...` instruction (line continuations missing), so Docker backend build may fail until fixed.
+- Frontend Dockerfile uses `node:18-slim` while project docs state Node 20+ for local dev.

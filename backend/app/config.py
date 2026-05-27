@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = "your-secret-key-change-in-production"
     DEMO_MODE: bool = True
+    FIREBASE_AUTH_ENABLED: bool = False
     
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/algotrading"
@@ -39,6 +40,12 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "jwt-secret-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
+
+    # Firebase
+    FIREBASE_PROJECT_ID: str = ""
+    FIREBASE_WEB_API_KEY: str = ""
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = ""
+    FIRESTORE_DATABASE_ID: str = "(default)"
     
     class Config:
         env_file = ".env"

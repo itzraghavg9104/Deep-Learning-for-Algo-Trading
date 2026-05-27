@@ -5,12 +5,14 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Union
 
 from app.models.db.database import get_db
 from app.models.db.db_service import DBService
 from app.config import settings
 from app.services.demo_store import demo_store
+from app.services.firebase_admin_service import verify_firebase_token
+from app.services.firestore_store import firestore_store
 
 router = APIRouter()
 
@@ -30,7 +32,7 @@ class UserCreate(BaseModel):
     password: str
 
 class UserResponse(BaseModel):
-    id: int
+    id: Union[int, str]
     email: str
     is_active: bool
 
@@ -59,6 +61,18 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if settings.FIREBASE_AUTH_ENABLED:
+        try:
+            principal = verify_firebase_token(token)
+            user = firestore_store.upsert_user(
+                user_uid=principal.uid,
+                email=principal.email,
+                is_active=True,
+            )
+            return UserResponse(**user)
+        except Exception:
+            raise credentials_exception
+
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         email: str = payload.get("sub")
@@ -67,7 +81,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         token_data = TokenData(email=email)
     except JWTError:
         raise credentials_exception
-    
+
     if settings.DEMO_MODE:
         user = demo_store.get_user_by_email(email=token_data.email)
         if user is None:
@@ -82,6 +96,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
+    if settings.FIREBASE_AUTH_ENABLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Register via Firebase client SDK when FIREBASE_AUTH_ENABLED=true",
+        )
     if settings.DEMO_MODE:
         db_user = demo_store.get_user_by_email(email=user.email)
         if db_user:
@@ -100,6 +119,11 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    if settings.FIREBASE_AUTH_ENABLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Login via Firebase client SDK when FIREBASE_AUTH_ENABLED=true",
+        )
     if settings.DEMO_MODE:
         user = demo_store.get_user_by_email(email=form_data.username)
         if not user:
