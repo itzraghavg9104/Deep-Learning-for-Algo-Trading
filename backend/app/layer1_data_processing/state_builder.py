@@ -82,6 +82,11 @@ def build_state(
     
     # === TRADER BEHAVIOR ===
     state_dict['risk_tolerance'] = trader_profile.get('risk_tolerance', 0.5)
+    behavior_array = trader_profile.get("behavior_array", {}) or {}
+    state_dict['capital_per_trade_pref'] = behavior_array.get("capital_per_trade_pct", 0.1)
+    state_dict['tp_sl_pref'] = behavior_array.get("tp_sl_ratio_preference", 0.4)
+    state_dict['max_drawdown_pref'] = behavior_array.get("drawdown_sensitivity", 0.2)
+    state_dict['cooldown_pref'] = behavior_array.get("post_loss_rest_min", 0.1)
     
     # Encode timeframe (0=intraday, 1=swing, 2=position, 3=longterm)
     timeframe_map = {'intraday': 0, 'swing': 1, 'position': 2, 'longterm': 3}
@@ -178,6 +183,10 @@ def _dict_to_normalized_array(state_dict: Dict[str, Any]) -> np.ndarray:
         'above_sma_50': ('none', 0, 1),
         'trend_bullish': ('none', 0, 1),
         'risk_tolerance': ('none', 0, 1),
+        'capital_per_trade_pref': ('none', 0, 1),
+        'tp_sl_pref': ('none', 0, 1),
+        'max_drawdown_pref': ('none', 0, 1),
+        'cooldown_pref': ('none', 0, 1),
         'timeframe': ('none', 0, 1),
         'cash_ratio': ('none', 0, 1),
         'pred_confidence': ('none', 0, 1),
