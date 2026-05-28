@@ -1,58 +1,35 @@
-# Setup Guide (Firebase + Existing ML Stack)
+# Setup Guide (Complete End-to-End)
 
-This guide covers full setup for:
-- Backend (FastAPI + ML services)
-- Frontend (Next.js)
-- Firebase Auth + Firestore integration
-- Required environment variables and API usage
+This is the complete setup runbook for local development, Firebase mode, model training, and production-ready configuration.
+
+For security and hardening practices, also read `docs/SAFE_GUIDE.md`.
 
 ---
 
-## 1. Prerequisites
+## 1) Prerequisites
 
-- Python 3.12+
-- Node.js 20+
-- Firebase project (Auth + Firestore enabled)
-- (Optional) Docker + Docker Compose
-
----
-
-## 2. Firebase Project Setup
-
-## 2.1 Create Project
-1. Go to Firebase Console.
-2. Create/select project.
-3. Note `Project ID`.
-
-## 2.2 Enable Authentication
-1. Firebase Console -> Authentication -> Sign-in method.
-2. Enable providers you need (Email/Password recommended first).
-
-## 2.3 Enable Firestore
-1. Firebase Console -> Firestore Database.
-2. Create database in Native mode.
-3. Start in test mode for local development (tighten security rules later).
-
-## 2.4 Service Account (Backend)
-1. Firebase Console -> Project settings -> Service accounts.
-2. Generate new private key JSON.
-3. Store file locally (outside git), e.g.:
-   - `/absolute/path/firebase-service-account.json`
-
-## 2.5 Web App Config (Frontend)
-1. Firebase Console -> Project settings -> Your apps -> Web app.
-2. Copy config values:
-   - apiKey
-   - authDomain
-   - projectId
-   - appId
-   - messagingSenderId
+- Python `3.12+`
+- Node.js `20+` (recommended for local)
+- npm `10+`
+- Git
+- Optional: Docker + Docker Compose
+- Optional (for Firebase mode): Firebase project with Auth + Firestore
 
 ---
 
-## 3. Backend Setup
+## 2) Repository Bootstrap
 
-## 3.1 Install
+```bash
+git clone <your-repo-url>
+cd Deep-Learning-for-Algo-Trading
+```
+
+---
+
+## 3) Backend Setup
+
+### 3.1 Create environment and install
+
 ```bash
 cd backend
 python -m venv venv
@@ -60,109 +37,187 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 3.2 Backend `.env`
-Create `backend/.env` (copy from `.env.example`) and set:
+### 3.2 Create backend env file
+
+```bash
+cp .env.example .env
+```
+
+### 3.3 Minimal local `.env` (Demo Mode)
+
+Use this first for quick start without Postgres/Redis:
 
 ```env
-# Core
 APP_ENV=development
 DEBUG=true
 DEMO_MODE=true
-
-# Migration switch
 FIREBASE_AUTH_ENABLED=false
 
-# Firebase / Firestore
-FIREBASE_PROJECT_ID=your-firebase-project-id
-FIREBASE_WEB_API_KEY=your-firebase-web-api-key
-FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/firebase-service-account.json
-FIRESTORE_DATABASE_ID=(default)
+SECRET_KEY=dev-only-change-me
+JWT_SECRET=dev-only-change-me
+JWT_ALGORITHM=HS256
+JWT_EXPIRY_HOURS=24
 
-# Existing backend settings
 DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/algotrading
 REDIS_URL=redis://localhost:6379/0
 MODEL_PATH=./models
+
+FIREBASE_PROJECT_ID=
+FIREBASE_WEB_API_KEY=
+FIREBASE_SERVICE_ACCOUNT_PATH=
+FIRESTORE_DATABASE_ID=(default)
 ```
 
-### Firebase migration mode
-- Keep `DEMO_MODE=true` during migration if you want non-Firebase fallbacks.
-- Set `FIREBASE_AUTH_ENABLED=true` to enforce Firebase ID token validation in backend.
+### 3.4 Run backend
 
-## 3.3 Run backend
 ```bash
 cd backend
 source venv/bin/activate
 uvicorn app.main:app --reload
 ```
 
+Backend URLs:
+- API root: `http://localhost:8000/`
+- Swagger docs: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
+
 ---
 
-## 4. Frontend Setup
+## 4) Frontend Setup
 
-## 4.1 Install
+### 4.1 Install dependencies
+
 ```bash
 cd frontend
 npm install
 ```
 
-## 4.2 Frontend `.env.local`
+### 4.2 Create frontend env
+
 Create `frontend/.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
-
-# Firebase client SDK
-NEXT_PUBLIC_FIREBASE_API_KEY=your-firebase-api-key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-firebase-project-id
-NEXT_PUBLIC_FIREBASE_APP_ID=your-firebase-app-id
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 ```
 
-## 4.3 Run frontend
+### 4.3 Run frontend
+
 ```bash
 cd frontend
 npm run dev
 ```
 
+Frontend URL:
+- `http://localhost:3000`
+
 ---
 
-## 5. Current Auth/API Behavior (Important)
+## 5) Auth Modes (Critical)
 
-## 5.1 When `FIREBASE_AUTH_ENABLED=false`
-- Existing JWT + demo/local auth flow remains active.
-- `/api/v1/auth/login` and `/api/v1/auth/register` work as before.
+### Mode A: Demo/Local Auth
 
-## 5.2 When `FIREBASE_AUTH_ENABLED=true`
+Set:
+- `DEMO_MODE=true`
+- `FIREBASE_AUTH_ENABLED=false`
+
+Behavior:
+- `/api/v1/auth/login` and `/api/v1/auth/register` are active.
+- Demo mode is intentionally permissive for local demos.
+
+### Mode B: Firebase Auth
+
+Set:
+- `DEMO_MODE=false` (recommended)
+- `FIREBASE_AUTH_ENABLED=true`
+- Fill Firebase env values
+
+Behavior:
 - Backend expects Firebase ID token in `Authorization: Bearer <id_token>`.
-- `/api/v1/auth/login` and `/api/v1/auth/register` return `400` intentionally.
-- Login/register must happen via Firebase client SDK on frontend.
+- `/api/v1/auth/login` and `/api/v1/auth/register` return `400` by design.
 
 ---
 
-## 6. API Endpoints Added for Behavior Migration
+## 6) Firebase Setup (If Using Mode B)
 
-Base: `/api/v1/profile`
-
-1. `POST /risk-assessment`
-   - existing scalar risk flow, now also persisted to Firestore when enabled
-
-2. `POST /behavior-assessment`
-   - accepts expanded questionnaire answers
-   - returns normalized behavior profile payload
-
-3. `POST /trades/evaluate`
-   - evaluates planned vs executed trade against behavior constraints
-   - returns compliance score + violations
-
-4. `GET /`
-   - profile response now includes `behavior_profile` when available
+1. Create/select Firebase project.
+2. Enable Authentication provider(s).
+3. Enable Firestore in Native mode.
+4. Generate service account JSON and store securely outside git.
+5. Fill backend:
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_WEB_API_KEY`
+   - `FIREBASE_SERVICE_ACCOUNT_PATH`
+6. Fill frontend:
+   - `NEXT_PUBLIC_FIREBASE_API_KEY`
+   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+   - `NEXT_PUBLIC_FIREBASE_APP_ID`
+   - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 
 ---
 
-## 7. Example Requests
+## 7) Optional Infra Setup (Postgres/Redis + Docker)
 
-## 7.1 Behavior assessment
+### 7.1 Docker Compose
+
+From repo root:
+
+```bash
+docker-compose up --build
+```
+
+Services:
+- Backend on `:8000`
+- Frontend on `:3000`
+- Postgres on `:5432`
+- Redis on `:6379`
+
+### 7.2 Notes
+
+- Demo mode can run without DB/Redis.
+- For persistent runtime behavior, set `DEMO_MODE=false` and use real stores.
+
+---
+
+## 8) Model Training Pipeline
+
+Run from `backend/`:
+
+```bash
+source venv/bin/activate
+python training/download_data.py
+python training/train_lstm.py
+python training/train_ppo.py
+```
+
+Expected outputs:
+- `backend/data/training_data.csv`
+- `backend/models/lstm_final.pt`
+- `backend/models/ppo_trading_final.zip`
+
+---
+
+## 9) Smoke Test Checklist
+
+1. Backend starts and `/health` returns healthy.
+2. Frontend loads and connects to API.
+3. Login works for chosen auth mode.
+4. `GET /api/v1/trading/watchlist` returns data.
+5. `GET /api/v1/trading/market/RELIANCE.NS` returns history + indicators.
+6. `POST /api/v1/profile/risk-assessment` succeeds.
+7. `POST /api/v1/backtest/run` returns a result.
+
+---
+
+## 10) Useful API Examples
+
+### 10.1 Behavior assessment
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/profile/behavior-assessment \
   -H "Authorization: Bearer <TOKEN>" \
@@ -185,7 +240,8 @@ curl -X POST http://localhost:8000/api/v1/profile/behavior-assessment \
   }'
 ```
 
-## 7.2 Trade evaluation
+### 10.2 Trade evaluation
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/profile/trades/evaluate \
   -H "Authorization: Bearer <TOKEN>" \
@@ -193,9 +249,7 @@ curl -X POST http://localhost:8000/api/v1/profile/trades/evaluate \
   -d '{
     "trade_id": "T-1001",
     "symbol": "RELIANCE.NS",
-    "planned": {
-      "capital_per_trade_pct": 0.05
-    },
+    "planned": { "capital_per_trade_pct": 0.05 },
     "executed": {
       "capital_per_trade_pct": 0.07,
       "cooldown_respected": false
@@ -207,34 +261,20 @@ curl -X POST http://localhost:8000/api/v1/profile/trades/evaluate \
 
 ---
 
-## 8. Firestore Data Layout (Current)
+## 11) Production Configuration (Mandatory)
 
-- `users/{uid}`
-- `users/{uid}/risk_assessments/latest`
-- `users/{uid}/preferences/latest`
-- `users/{uid}/behavior_profiles/latest`
-- `users/{uid}/trade_events/{docId}` (read path ready)
-- `users/{uid}/trade_evaluations/{docId}`
+Use at minimum:
 
----
+```env
+APP_ENV=production
+DEBUG=false
+DEMO_MODE=false
+FIREBASE_AUTH_ENABLED=true
+SECRET_KEY=<strong-random-secret>
+JWT_SECRET=<strong-random-secret>
+```
 
-## 9. Security Notes
-
-- Never commit Firebase service account JSON.
-- Use strict Firestore rules before production.
-- Rotate keys if leaked.
-- In production, set:
-  - `DEBUG=false`
-  - `DEMO_MODE=false`
-  - `FIREBASE_AUTH_ENABLED=true`
-
----
-
-## 10. Validation Checklist
-
-1. Backend starts without import/runtime errors.
-2. Frontend starts and can hit backend.
-3. Firebase token accepted by `/api/v1/auth/me` when enabled.
-4. `POST /profile/behavior-assessment` persists profile.
-5. `POST /profile/trades/evaluate` stores evaluation entry.
-6. `GET /profile/` returns profile + behavior payload.
+Important:
+- Backend now blocks startup in production if unsafe defaults are detected.
+- Set strict `CORS_ORIGINS` to actual frontend domains.
+- Keep service account file out of repo and rotate on exposure.

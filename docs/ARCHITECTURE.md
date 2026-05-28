@@ -28,6 +28,29 @@ This document describes the high-level architecture of the AlgoTrading platform 
 - WebSocket sends live price updates to the dashboard.
 - Demo mode can replace database persistence for auth and backtests.
 
+## End-to-End Request Flow
+
+1. User logs in from the frontend (`/auth/login`).
+2. Frontend stores token in localStorage (`auth-storage`) and cookie (`auth_token`).
+3. Protected routes are enforced in `frontend/src/middleware.ts`.
+4. Frontend sends API requests to `backend/app/api/routes/*` with bearer token.
+5. Backend validates token in `get_current_user`:
+   - Firebase token if `FIREBASE_AUTH_ENABLED=true`.
+   - JWT token + demo/DB lookup otherwise.
+6. Trading requests trigger:
+   - Market data fetch (`layer1_data_processing/market_data.py`)
+   - Indicators (`technical_indicators.py`)
+   - Model inference (`services/prediction_service.py`) with fallback when models are unavailable.
+7. Backtest/profile updates are stored in Firestore (if enabled) or in-memory demo store.
+
+## Security Runtime Guard
+
+- On backend startup, production config is validated.
+- App refuses to start in production if:
+  - `DEBUG=true`
+  - `DEMO_MODE=true`
+  - default `SECRET_KEY` or `JWT_SECRET` are still in use
+
 ## Data Stores
 
 - Postgres is planned for user, trade, backtest, and risk profile persistence.

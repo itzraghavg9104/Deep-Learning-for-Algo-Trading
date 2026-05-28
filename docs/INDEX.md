@@ -9,6 +9,7 @@
 - `docs/ARCHITECTURE.md` — High-level system layout.
 - `docs/DATA_FLOW.md` — End-to-end flows and data movement.
 - `docs/DEMO_MODE.md` — Running without Postgres/Redis.
+- `docs/SAFE_GUIDE.md` — Security and operational hardening guide.
 - `docs/API_REFERENCE.md` — REST and WebSocket APIs (detailed).
 - `docs/BACKEND_REFERENCE.md` — Backend modules and inputs/outputs.
 - `docs/FRONTEND_REFERENCE.md` — Frontend pages and components.

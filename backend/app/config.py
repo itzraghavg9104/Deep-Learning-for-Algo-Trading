@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     FIREBASE_WEB_API_KEY: str = ""
     FIREBASE_SERVICE_ACCOUNT_PATH: str = ""
     FIRESTORE_DATABASE_ID: str = "(default)"
+
+    def production_security_issues(self) -> List[str]:
+        """Return blocking security issues for production configuration."""
+        issues: List[str] = []
+        if self.APP_ENV.lower() == "production":
+            if self.DEBUG:
+                issues.append("DEBUG must be False in production.")
+            if self.DEMO_MODE:
+                issues.append("DEMO_MODE must be False in production.")
+            if self.SECRET_KEY == "your-secret-key-change-in-production":
+                issues.append("SECRET_KEY is using the default insecure value.")
+            if self.JWT_SECRET == "jwt-secret-change-in-production":
+                issues.append("JWT_SECRET is using the default insecure value.")
+        return issues
     
     class Config:
         env_file = ".env"

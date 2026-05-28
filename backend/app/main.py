@@ -3,10 +3,13 @@ Algo Trading System - FastAPI Backend
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from app.api.routes import trading, backtest, profile, auth
 from app.api import websocket as websocket_router
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Algo Trading System",
@@ -31,6 +34,16 @@ app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtest"]
 app.include_router(profile.router, prefix="/api/v1/profile", tags=["Profile"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(websocket_router.router, prefix="/api/v1", tags=["WebSocket"])
+
+
+@app.on_event("startup")
+async def validate_runtime_security():
+    """Fail fast for unsafe production configuration."""
+    issues = settings.production_security_issues()
+    if issues:
+        raise RuntimeError("Unsafe production configuration: " + " | ".join(issues))
+    if settings.APP_ENV.lower() != "production" and settings.DEMO_MODE:
+        logger.warning("Running with DEMO_MODE=True. This is only for local/demo use.")
 
 
 @app.get("/")
