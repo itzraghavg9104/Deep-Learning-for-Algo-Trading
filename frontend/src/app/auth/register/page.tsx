@@ -24,7 +24,7 @@ type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register: registerUser, isLoading, error, clearError } = useAuthStore();
+  const { register: registerUser, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -46,6 +46,16 @@ export default function RegisterPage() {
       setTimeout(() => {
         router.push("/dashboard");
       }, 1500);
+    } catch {
+      // Error is handled by the store
+    }
+  };
+
+  const onGoogleSignIn = async () => {
+    try {
+      clearError();
+      await loginWithGoogle();
+      router.push("/dashboard");
     } catch {
       // Error is handled by the store
     }
@@ -197,6 +207,15 @@ export default function RegisterPage() {
             <span className="text-sm text-gray-500">or</span>
             <div className="flex-1 h-px bg-gray-800" />
           </div>
+
+          <button
+            type="button"
+            onClick={onGoogleSignIn}
+            disabled={isLoading}
+            className="w-full py-3 bg-gray-800 border border-gray-700 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Continue with Google
+          </button>
 
           {/* Login Link */}
           <p className="text-center text-gray-400">

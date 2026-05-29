@@ -72,10 +72,13 @@ venv.bak/
 # pyenv
 .python-version
 
-# Environments
+# Environments and local secrets
 .env
 .env.local
 .env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
 
 # Node
 node_modules/
@@ -113,3 +116,4 @@ dump.rdb
 *.pem
 *.key
 secrets/
+serets/

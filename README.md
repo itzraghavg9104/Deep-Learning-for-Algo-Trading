@@ -59,6 +59,8 @@ cd frontend && npm run dev
 
 **Demo Mode:** No Postgres/Redis required. The app runs fully in-memory by default (`DEMO_MODE=True`). Copy `backend/.env.example` to `backend/.env` to override.
 
+**Git ignore policy:** local secret/config files are intentionally untracked. Keep `.env`, `.env.local` (in any folder), and `secrets/` out of git.
+
 ---
 
 ## 🏗️ Architecture

@@ -18,7 +18,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { login, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -33,6 +33,16 @@ export default function LoginPage() {
     try {
       clearError();
       await login(data.email, data.password);
+      router.push("/dashboard");
+    } catch {
+      // Error is handled by the store
+    }
+  };
+
+  const onGoogleSignIn = async () => {
+    try {
+      clearError();
+      await loginWithGoogle();
       router.push("/dashboard");
     } catch {
       // Error is handled by the store
@@ -139,6 +149,15 @@ export default function LoginPage() {
             <span className="text-sm text-gray-500">or</span>
             <div className="flex-1 h-px bg-gray-800" />
           </div>
+
+          <button
+            type="button"
+            onClick={onGoogleSignIn}
+            disabled={isLoading}
+            className="w-full py-3 bg-gray-800 border border-gray-700 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Continue with Google
+          </button>
 
           {/* Register Link */}
           <p className="text-center text-gray-400">

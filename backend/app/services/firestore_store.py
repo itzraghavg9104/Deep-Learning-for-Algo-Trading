@@ -12,8 +12,10 @@ from app.services.demo_store import demo_store
 from app.services.firebase_admin_service import initialize_firebase_admin, is_firebase_ready
 
 try:
+    from firebase_admin import firestore as admin_firestore
     from google.cloud import firestore
 except Exception:  # pragma: no cover - optional dependency
+    admin_firestore = None
     firestore = None
 
 
@@ -34,13 +36,14 @@ class FirestoreStore:
         self._init()
 
     def _init(self) -> None:
-        if not is_firebase_ready() or firestore is None:
+        if not is_firebase_ready() or firestore is None or admin_firestore is None:
             self._enabled = False
             return
-        initialize_firebase_admin()
-        self._db = firestore.Client(
-            project=settings.FIREBASE_PROJECT_ID or None,
-            database=settings.FIRESTORE_DATABASE_ID,
+        if not initialize_firebase_admin():
+            self._enabled = False
+            return
+        self._db = admin_firestore.client(
+            database_id=settings.FIRESTORE_DATABASE_ID,
         )
         self._enabled = True
 

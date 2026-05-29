@@ -43,7 +43,23 @@ def compute_indicators(df: pd.DataFrame) -> Dict[str, Any]:
         print(f"Error computing indicators: {e}")
         indicators = {"error": str(e)}
     
-    return indicators
+    return _to_python_types(indicators)
+
+
+def _to_python_types(value: Any) -> Any:
+    """
+    Recursively convert numpy/pandas scalar values to native Python types
+    so FastAPI/Pydantic JSON serialization remains stable.
+    """
+    if isinstance(value, dict):
+        return {k: _to_python_types(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_python_types(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_to_python_types(v) for v in value)
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
 
 
 def _compute_pandas_ta_indicators(df: pd.DataFrame) -> Dict[str, Any]:

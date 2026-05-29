@@ -105,6 +105,8 @@ NEXT_PUBLIC_FIREBASE_APP_ID=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 ```
 
+Do not commit local env files or secret bundles. This repo ignores `.env`, `.env.local` (including nested folders), and `secrets/`.
+
 ### 4.3 Run frontend
 
 ```bash
