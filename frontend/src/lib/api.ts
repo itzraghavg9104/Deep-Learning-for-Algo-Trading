@@ -122,6 +122,11 @@ export const profileApi = {
     return response.data;
   },
 
+  submitBehaviorAssessment: async (answers: Record<string, unknown>) => {
+    const response = await api.post("/profile/behavior-assessment", { answers });
+    return response.data;
+  },
+
   updatePreferences: async (preferences: {
     use_sentiment: boolean;
     preferred_timeframe: string;

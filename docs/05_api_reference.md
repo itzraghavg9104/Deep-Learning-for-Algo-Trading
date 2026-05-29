@@ -21,6 +21,7 @@ Production: https://api.yourdomain.com/api/v1
 | `/backtest/run` | POST | Run backtest simulation |
 | `/backtest/{id}` | GET | Get backtest results |
 | `/profile/risk-assessment` | POST | Submit risk questionnaire |
+| `/profile/behavior-assessment` | POST | Submit expanded behavior questionnaire (30 questions) |
 | `/profile/` | GET | Get user profile |
 | `/profile/preferences` | PUT | Update preferences |
 | `/profile/trades` | GET | Get trade history |
@@ -274,6 +275,37 @@ POST /api/v1/profile/risk-assessment
     }
 }
 ```
+
+---
+
+### Submit Behavior Assessment
+
+Submit a categorized 30-question behavior questionnaire plus execution constraints.
+
+```http
+POST /api/v1/profile/behavior-assessment
+```
+
+**Request Body (example):**
+
+```json
+{
+    "answers": {
+        "question_scores": [
+            {"id": "q_experience", "category": "Profile", "score": 4},
+            {"id": "q_overtrade_1", "category": "Overtrading & Impulse", "score": 2}
+        ],
+        "capital_per_trade_pct": 8,
+        "tp_sl_ratio": 2.0,
+        "max_profit_close_pct": 20,
+        "max_trades_per_day": 6,
+        "post_loss_rest_min": 45,
+        "max_drawdown_pct": 15
+    }
+}
+```
+
+**Response:** returns `behavior_profile` containing `behavior_array` and derived `risk_profile`.
 
 ---
 

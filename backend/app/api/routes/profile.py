@@ -1,23 +1,26 @@
 """
 User profile and risk assessment API routes.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from app.trader_behavior.risk_profiler import calculate_risk_score, get_risk_category
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
 from app.api.routes.auth import get_current_user
 from app.config import settings
 from app.services.demo_store import demo_store
 from app.services.firestore_store import firestore_store
+from app.trader_behavior.risk_profiler import calculate_risk_score, get_risk_category
 
 router = APIRouter()
 
+MIN_BEHAVIOR_QUESTIONS = 24
+
 
 class RiskAssessmentRequest(BaseModel):
-    """Risk assessment questionnaire answers."""
-    answers: List[int]  # List of answer scores (1-4)
+    """Legacy risk assessment questionnaire answers."""
+    answers: List[int]
 
 
 class RiskProfile(BaseModel):
@@ -34,6 +37,7 @@ class UserPreferences(BaseModel):
     preferred_timeframe: str = "swing"  # intraday, swing, position, longterm
     symbols: List[str] = []
 
+
 class BehaviorAssessmentRequest(BaseModel):
     """Expanded behavior questionnaire response payload."""
     answers: Dict[str, Any]
@@ -49,72 +53,94 @@ class TradeEvaluationRequest(BaseModel):
     pnl_pct: float = 0.0
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _pct(name: str, raw_answers: Dict[str, Any], default: float) -> float:
+    value = raw_answers.get(name, default)
+    return max(0.0, min(_to_float(value, default) / 100.0, 1.0))
+
+
+def _number(name: str, raw_answers: Dict[str, Any], default: float, max_value: float) -> float:
+    value = raw_answers.get(name, default)
+    return max(0.0, min(_to_float(value, default) / max_value, 1.0))
+
+
+def _extract_question_scores(raw_answers: Dict[str, Any]) -> List[int]:
+    scores: List[int] = []
+
+    question_scores = raw_answers.get("question_scores", [])
+    if isinstance(question_scores, list):
+        for item in question_scores:
+            if isinstance(item, dict):
+                scores.append(int(max(1, min(5, _to_float(item.get("score"), 3.0)))))
+            else:
+                scores.append(int(max(1, min(5, _to_float(item, 3.0)))))
+
+    if not scores:
+        for key, value in raw_answers.items():
+            if key.startswith("q_"):
+                scores.append(int(max(1, min(5, _to_float(value, 3.0)))))
+
+    return scores
+
+
 def _build_behavior_array(raw_answers: Dict[str, Any]) -> Dict[str, float]:
     """Map questionnaire answers to a normalized behavior vector."""
-    def pct(name: str, default: float) -> float:
-        value = raw_answers.get(name, default)
-        try:
-            return max(0.0, min(float(value) / 100.0, 1.0))
-        except Exception:
-            return default
-
-    def number(name: str, default: float, max_value: float) -> float:
-        value = raw_answers.get(name, default)
-        try:
-            return max(0.0, min(float(value) / max_value, 1.0))
-        except Exception:
-            return max(0.0, min(default / max_value, 1.0))
-
     return {
-        "capital_per_trade_pct": pct("capital_per_trade_pct", 0.1),
-        "tp_sl_ratio_preference": number("tp_sl_ratio", 2.0, 5.0),
-        "max_profit_close_pct": pct("max_profit_close_pct", 0.2),
-        "trade_frequency_window_score": number("max_trades_per_day", 5.0, 30.0),
-        "post_loss_rest_min": number("post_loss_rest_min", 30.0, 720.0),
-        "drawdown_sensitivity": pct("max_drawdown_pct", 0.2),
-        "streak_risk_adjustment": number("loss_streak_reduce_pct", 20.0, 100.0),
-        "intraday_var_limit": pct("intraday_var_pct", 0.03),
-        "entry_slippage_tolerance_bps": number("entry_slippage_bps", 15.0, 200.0),
-        "news_proximity_buffer_min": number("news_buffer_min", 30.0, 240.0),
-        "partial_tp_preference": number("partial_tp_frequency", 2.0, 4.0),
-        "breakeven_migration_trigger_pct": pct("breakeven_trigger_pct", 0.01),
-        "breakeven_migration_time_min": number("breakeven_migration_time_min", 60.0, 720.0),
+        # User requested core feedback metrics
+        "capital_per_trade_pct": _pct("capital_per_trade_pct", raw_answers, 10.0),
+        "tp_sl_ratio_preference": _number("tp_sl_ratio", raw_answers, 2.0, 8.0),
+        "max_profit_close_pct": _pct("max_profit_close_pct", raw_answers, 20.0),
+
+        # Overtrading & impulse
+        "trade_frequency_window_score": _number("max_trades_per_day", raw_answers, 6.0, 40.0),
+        "avg_holding_time_score": _number("avg_holding_time_min", raw_answers, 240.0, 10080.0),
+        "post_loss_rest_min": _number("post_loss_rest_min", raw_answers, 45.0, 1440.0),
+
+        # Risk & account management
+        "drawdown_sensitivity": _pct("max_drawdown_pct", raw_answers, 15.0),
+        "streak_risk_adjustment": _number("loss_streak_reduce_pct", raw_answers, 25.0, 100.0),
+        "intraday_var_limit": _pct("intraday_var_pct", raw_answers, 3.0),
+
+        # Market context execution
+        "entry_slippage_tolerance_bps": _number("entry_slippage_bps", raw_answers, 12.0, 300.0),
+        "time_of_day_performance_bias": _number("session_consistency_score", raw_answers, 50.0, 100.0),
+        "news_proximity_buffer_min": _number("news_buffer_min", raw_answers, 30.0, 360.0),
+
+        # Advanced trade management
+        "partial_tp_preference": _number("partial_tp_frequency", raw_answers, 2.0, 4.0),
+        "breakeven_migration_trigger_pct": _pct("breakeven_trigger_pct", raw_answers, 1.0),
+        "breakeven_migration_time_min": _number("breakeven_migration_time_min", raw_answers, 60.0, 1440.0),
     }
 
 
 @router.post("/risk-assessment", response_model=RiskProfile)
 async def submit_risk_assessment(request: RiskAssessmentRequest, current_user=Depends(get_current_user)):
     """
-    Submit risk assessment questionnaire and get risk profile.
-    
-    Args:
-        request: List of questionnaire answers (1-4 scale)
-    
-    Returns:
-        Risk profile with tolerance score, category, and recommendations
+    Legacy endpoint for simple risk scoring.
     """
     if len(request.answers) < 4:
-        raise HTTPException(
-            status_code=400, 
-            detail="At least 4 questionnaire answers required"
-        )
-    
-    # Calculate risk score
+        raise HTTPException(status_code=400, detail="At least 4 questionnaire answers required")
+
     risk_tolerance = calculate_risk_score(request.answers)
     category, description = get_risk_category(risk_tolerance)
-    
-    # Generate recommendations based on risk profile
+
     recommendations = {
-        "max_position_size": round(0.05 + (risk_tolerance * 0.15), 2),  # 5-20%
-        "suggested_stop_loss": round(0.05 + (risk_tolerance * 0.10), 2),  # 5-15%
-        "suggested_take_profit": round(0.10 + (risk_tolerance * 0.20), 2),  # 10-30%
+        "max_position_size": round(0.05 + (risk_tolerance * 0.15), 2),
+        "suggested_stop_loss": round(0.05 + (risk_tolerance * 0.10), 2),
+        "suggested_take_profit": round(0.10 + (risk_tolerance * 0.20), 2),
     }
-    
+
     response = RiskProfile(
         risk_tolerance=risk_tolerance,
         category=category,
         description=description,
-        recommendations=recommendations
+        recommendations=recommendations,
     )
     if settings.FIREBASE_AUTH_ENABLED:
         firestore_store.save_risk_assessment(
@@ -133,27 +159,60 @@ async def submit_risk_assessment(request: RiskAssessmentRequest, current_user=De
 @router.post("/behavior-assessment")
 async def submit_behavior_assessment(request: BehaviorAssessmentRequest, current_user=Depends(get_current_user)):
     """
-    Submit expanded behavior assessment and persist normalized behavior array.
+    Submit expanded (~30 question) behavior assessment and persist normalized behavior array.
     """
+    question_scores = _extract_question_scores(request.answers)
+    if len(question_scores) < MIN_BEHAVIOR_QUESTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At least {MIN_BEHAVIOR_QUESTIONS} behavior-question answers are required",
+        )
+
+    # Convert 1-5 answers to 1-4 for legacy scoring compatibility.
+    normalized_for_risk = [max(1, min(4, int(round(((s - 1) / 4) * 3 + 1)))) for s in question_scores]
+    risk_tolerance = calculate_risk_score(normalized_for_risk)
+    category, description = get_risk_category(risk_tolerance)
+
+    recommendations = {
+        "max_position_size": round(0.05 + (risk_tolerance * 0.15), 2),
+        "suggested_stop_loss": round(0.05 + (risk_tolerance * 0.10), 2),
+        "suggested_take_profit": round(0.10 + (risk_tolerance * 0.20), 2),
+    }
+
     behavior_array = _build_behavior_array(request.answers)
+    profile_payload = {
+        "risk_tolerance": risk_tolerance,
+        "category": category,
+        "description": description,
+        "recommendations": recommendations,
+    }
     payload = {
         "behavior_array": behavior_array,
         "raw_answers": request.answers,
+        "question_count": len(question_scores),
+        "risk_profile": profile_payload,
         "updated_at": datetime.utcnow().isoformat(),
     }
 
     if settings.FIREBASE_AUTH_ENABLED:
+        firestore_store.save_risk_assessment(str(current_user.id), profile_payload)
         firestore_store.save_behavior_profile(str(current_user.id), payload)
         return {"message": "Behavior profile saved", "behavior_profile": payload}
+
+    if settings.DEMO_MODE:
+        demo_store.update_profile(
+            current_user.id,
+            risk_tolerance=risk_tolerance,
+            risk_category=category,
+            behavior_profile=payload,
+        )
 
     return {"message": "Behavior profile computed (demo)", "behavior_profile": payload}
 
 
 @router.get("/")
 async def get_profile(current_user=Depends(get_current_user)):
-    """
-    Get current user profile.
-    """
+    """Get current user profile."""
     if settings.FIREBASE_AUTH_ENABLED:
         return firestore_store.get_profile(str(current_user.id), current_user.email)
 
@@ -171,6 +230,7 @@ async def get_profile(current_user=Depends(get_current_user)):
                 "preferred_timeframe": profile.preferred_timeframe,
                 "symbols": list(profile.symbols),
             },
+            "behavior_profile": profile.behavior_profile,
         }
 
     return {
@@ -181,9 +241,7 @@ async def get_profile(current_user=Depends(get_current_user)):
 
 @router.put("/preferences")
 async def update_preferences(preferences: UserPreferences, current_user=Depends(get_current_user)):
-    """
-    Update user trading preferences.
-    """
+    """Update user trading preferences."""
     if settings.FIREBASE_AUTH_ENABLED:
         saved = firestore_store.save_preferences(
             str(current_user.id),
@@ -215,9 +273,7 @@ async def update_preferences(preferences: UserPreferences, current_user=Depends(
 
 @router.get("/trades")
 async def get_trade_history(current_user=Depends(get_current_user)):
-    """
-    Get trade history for the current user.
-    """
+    """Get trade history for the current user."""
     if settings.FIREBASE_AUTH_ENABLED:
         trades = firestore_store.get_user_trades(str(current_user.id), current_user.email)
         total_pnl = sum(float(t.get("pnl", 0.0)) for t in trades)
@@ -243,20 +299,29 @@ async def get_trade_history(current_user=Depends(get_current_user)):
 
 @router.post("/trades/evaluate")
 async def evaluate_trade(request: TradeEvaluationRequest, current_user=Depends(get_current_user)):
-    """
-    Evaluate a trade against planned behavior constraints and store report.
-    """
-    planned_size = float(request.planned.get("capital_per_trade_pct", 0.0))
-    executed_size = float(request.executed.get("capital_per_trade_pct", 0.0))
+    """Evaluate a trade against planned behavior constraints and store report."""
+    planned_size = _to_float(request.planned.get("capital_per_trade_pct"), 0.0)
+    executed_size = _to_float(request.executed.get("capital_per_trade_pct"), 0.0)
+
+    planned_tp_sl = _to_float(request.planned.get("tp_sl_ratio"), 0.0)
+    executed_tp_sl = _to_float(request.executed.get("tp_sl_ratio"), 0.0)
+
+    planned_max_profit_close = _to_float(request.planned.get("max_profit_close_pct"), 0.0)
+    executed_max_profit_close = _to_float(request.executed.get("max_profit_close_pct"), 0.0)
+
     cooldown_ok = bool(request.executed.get("cooldown_respected", True))
 
     violations: List[str] = []
     if executed_size > planned_size > 0:
         violations.append("capital_limit_exceeded")
+    if planned_tp_sl > 0 and executed_tp_sl < planned_tp_sl:
+        violations.append("tp_sl_ratio_below_plan")
+    if planned_max_profit_close > 0 and executed_max_profit_close < planned_max_profit_close:
+        violations.append("premature_profit_close")
     if not cooldown_ok:
         violations.append("cooldown_violation")
 
-    compliance_score = max(0.0, 100.0 - (30.0 * len(violations)))
+    compliance_score = max(0.0, 100.0 - (20.0 * len(violations)))
 
     report = {
         "trade_id": request.trade_id,
@@ -265,6 +330,11 @@ async def evaluate_trade(request: TradeEvaluationRequest, current_user=Depends(g
         "violations": violations,
         "planned": request.planned,
         "executed": request.executed,
+        "feedback_loop": {
+            "capital_pct_delta": round(executed_size - planned_size, 4),
+            "tp_sl_ratio_delta": round(executed_tp_sl - planned_tp_sl, 4),
+            "max_profit_close_pct_delta": round(executed_max_profit_close - planned_max_profit_close, 4),
+        },
         "pnl": request.pnl,
         "pnl_pct": request.pnl_pct,
         "status": "pass" if not violations else "warn",

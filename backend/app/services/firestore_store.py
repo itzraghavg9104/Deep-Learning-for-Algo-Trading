@@ -80,7 +80,7 @@ class FirestoreStore:
                     "preferred_timeframe": profile.preferred_timeframe,
                     "symbols": list(profile.symbols),
                 },
-                "behavior_profile": {},
+                "behavior_profile": profile.behavior_profile,
             }
 
         user_doc = self._user_ref(user_uid).get()

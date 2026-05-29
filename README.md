@@ -201,6 +201,7 @@ Trains RL agent. Saves to `models/ppo_trading_final.zip`.
 | `/api/v1/backtest/run` | POST | Run backtest |
 | `/api/v1/backtest/{id}` | GET | Get backtest results |
 | `/api/v1/profile/risk-assessment` | POST | Risk profiling |
+| `/api/v1/profile/behavior-assessment` | POST | 30-question behavior profiling + behavior array |
 | `/api/v1/profile/` | GET | User profile |
 | `/api/v1/profile/preferences` | PUT | Update preferences |
 | `/api/v1/profile/trades` | GET | Trade history |

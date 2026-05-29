@@ -5,9 +5,9 @@ This store is process-local and resets on restart.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -35,6 +35,7 @@ class DemoProfile:
     use_sentiment: bool = False
     preferred_timeframe: str = "swing"
     symbols: tuple = ("RELIANCE.NS", "TCS.NS", "INFY.NS")
+    behavior_profile: Dict[str, Any] = field(default_factory=dict)
 
 
 class DemoStore:
