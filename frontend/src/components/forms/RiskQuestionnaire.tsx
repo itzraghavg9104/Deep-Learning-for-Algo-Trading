@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import axios from "axios";
 import { profileApi } from "@/lib/api";
 
@@ -12,6 +12,11 @@ type Question = {
 
 type BehaviorResult = {
   message: string;
+  model_training?: {
+    started: boolean;
+    scope: string;
+    user_id: string;
+  };
   behavior_profile: {
     behavior_array: Record<string, number>;
     question_count: number;
@@ -26,6 +31,14 @@ type BehaviorResult = {
       };
     };
   };
+};
+
+type TrainingStatus = {
+  status: "idle" | "queued" | "running" | "completed" | "failed";
+  message: string;
+  updated_at: string;
+  queued_update_pending?: boolean;
+  model_path?: string;
 };
 
 const QUESTIONS: Question[] = [
@@ -80,6 +93,7 @@ export function RiskQuestionnaire() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BehaviorResult | null>(null);
+  const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null);
 
   const answeredCount = useMemo(
     () => QUESTIONS.filter((question) => answers[question.id] && answers[question.id] > 0).length,
@@ -135,6 +149,8 @@ export function RiskQuestionnaire() {
       setLoading(true);
       const data = await profileApi.submitBehaviorAssessment(payload);
       setResult(data);
+      const status = await profileApi.getModelTrainingStatus();
+      setTrainingStatus(status);
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.detail === "string") {
         setError(err.response.data.detail);
@@ -145,6 +161,22 @@ export function RiskQuestionnaire() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!trainingStatus) return;
+    if (trainingStatus.status !== "queued" && trainingStatus.status !== "running") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await profileApi.getModelTrainingStatus();
+        setTrainingStatus(status);
+      } catch {
+        // keep last state if polling fails momentarily
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [trainingStatus]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -280,9 +312,9 @@ export function RiskQuestionnaire() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold disabled:opacity-50"
+          className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Submitting..." : "Submit Behavior Assessment"}
+          {loading ? "Submitting Assessment & Starting PPO Training..." : "Submit Behavior Assessment"}
         </button>
       </form>
 
@@ -292,6 +324,24 @@ export function RiskQuestionnaire() {
             {result.behavior_profile.risk_profile.category} Profile
           </h2>
           <p className="text-gray-300 mb-4">{result.behavior_profile.risk_profile.description}</p>
+
+          {result.model_training?.started ? (
+            <div className="mb-4 p-3 rounded-lg border border-blue-500/40 bg-blue-500/10 text-blue-300 text-sm space-y-1">
+              <p>PPO retraining started for your profile.</p>
+              <p className="text-xs text-blue-200">
+                Status: {trainingStatus?.status?.toUpperCase() ?? "QUEUED"} · {trainingStatus?.message ?? "Waiting..."}
+              </p>
+              {trainingStatus?.queued_update_pending ? (
+                <p className="text-xs text-blue-200">A newer reassessment update is queued.</p>
+              ) : null}
+              {trainingStatus?.status === "completed" && trainingStatus?.model_path ? (
+                <p className="text-xs text-green-300">Completed: {trainingStatus.model_path}</p>
+              ) : null}
+              {trainingStatus?.status === "failed" ? (
+                <p className="text-xs text-red-300">Training failed. Please retry assessment.</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
             <div className="p-3 bg-gray-800 rounded-lg border border-gray-700">

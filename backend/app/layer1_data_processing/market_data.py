@@ -10,28 +10,60 @@ import asyncio
 from functools import lru_cache
 
 
-# Popular NSE stocks
+# NIFTY 50 stocks
 NSE_STOCKS = {
-    "RELIANCE": "RELIANCE.NS",
-    "TCS": "TCS.NS",
-    "INFY": "INFY.NS",
-    "HDFCBANK": "HDFCBANK.NS",
-    "ICICIBANK": "ICICIBANK.NS",
-    "SBIN": "SBIN.NS",
+    "ADANIENT": "ADANIENT.NS",
+    "ADANIPORTS": "ADANIPORTS.NS",
+    "APOLLOHOSP": "APOLLOHOSP.NS",
+    "ASIANPAINT": "ASIANPAINT.NS",
+    "AXISBANK": "AXISBANK.NS",
+    "BAJAJ-AUTO": "BAJAJ-AUTO.NS",
+    "BAJFINANCE": "BAJFINANCE.NS",
+    "BAJAJFINSV": "BAJAJFINSV.NS",
+    "BEL": "BEL.NS",
     "BHARTIARTL": "BHARTIARTL.NS",
+    "BPCL": "BPCL.NS",
+    "BRITANNIA": "BRITANNIA.NS",
+    "CIPLA": "CIPLA.NS",
+    "COALINDIA": "COALINDIA.NS",
+    "DRREDDY": "DRREDDY.NS",
+    "EICHERMOT": "EICHERMOT.NS",
+    "ETERNAL": "ETERNAL.NS",
+    "GRASIM": "GRASIM.NS",
+    "HCLTECH": "HCLTECH.NS",
+    "HDFCBANK": "HDFCBANK.NS",
+    "HDFCLIFE": "HDFCLIFE.NS",
+    "HEROMOTOCO": "HEROMOTOCO.NS",
+    "HINDALCO": "HINDALCO.NS",
+    "HINDUNILVR": "HINDUNILVR.NS",
+    "ICICIBANK": "ICICIBANK.NS",
+    "INDUSINDBK": "INDUSINDBK.NS",
+    "INFY": "INFY.NS",
     "ITC": "ITC.NS",
+    "JIOFIN": "JIOFIN.NS",
+    "JSWSTEEL": "JSWSTEEL.NS",
     "KOTAKBANK": "KOTAKBANK.NS",
     "LT": "LT.NS",
-    "HINDUNILVR": "HINDUNILVR.NS",
-    "AXISBANK": "AXISBANK.NS",
-    "BAJFINANCE": "BAJFINANCE.NS",
+    "M&M": "M&M.NS",
     "MARUTI": "MARUTI.NS",
-    "ASIANPAINT": "ASIANPAINT.NS",
-    "WIPRO": "WIPRO.NS",
-    "HCLTECH": "HCLTECH.NS",
+    "NESTLEIND": "NESTLEIND.NS",
+    "NTPC": "NTPC.NS",
+    "ONGC": "ONGC.NS",
+    "POWERGRID": "POWERGRID.NS",
+    "RELIANCE": "RELIANCE.NS",
+    "SBILIFE": "SBILIFE.NS",
+    "SHRIRAMFIN": "SHRIRAMFIN.NS",
+    "SBIN": "SBIN.NS",
     "SUNPHARMA": "SUNPHARMA.NS",
-    "TITAN": "TITAN.NS",
+    "TCS": "TCS.NS",
+    "TATACONSUM": "TATACONSUM.NS",
     "TATAMOTORS": "TATAMOTORS.NS",
+    "TATASTEEL": "TATASTEEL.NS",
+    "TECHM": "TECHM.NS",
+    "TITAN": "TITAN.NS",
+    "TRENT": "TRENT.NS",
+    "ULTRACEMCO": "ULTRACEMCO.NS",
+    "WIPRO": "WIPRO.NS",
 }
 
 
@@ -46,6 +78,10 @@ def normalize_symbol(symbol: str) -> str:
         Symbol with .NS suffix if no suffix present
     """
     symbol = symbol.upper().strip()
+
+    # Keep index symbols like ^NSEI intact.
+    if symbol.startswith("^"):
+        return symbol
     
     # Already has suffix
     if symbol.endswith(".NS") or symbol.endswith(".BO"):

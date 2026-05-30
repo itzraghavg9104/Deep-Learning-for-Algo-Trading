@@ -11,6 +11,7 @@ from app.api.routes.auth import get_current_user
 from app.config import settings
 from app.services.demo_store import demo_store
 from app.services.firestore_store import firestore_store
+from app.services.user_model_training_service import trigger_user_retraining, get_user_training_status
 from app.trader_behavior.risk_profiler import calculate_risk_score, get_risk_category
 
 router = APIRouter()
@@ -197,7 +198,16 @@ async def submit_behavior_assessment(request: BehaviorAssessmentRequest, current
     if settings.FIREBASE_AUTH_ENABLED:
         firestore_store.save_risk_assessment(str(current_user.id), profile_payload)
         firestore_store.save_behavior_profile(str(current_user.id), payload)
-        return {"message": "Behavior profile saved", "behavior_profile": payload}
+        trigger_user_retraining(str(current_user.id), behavior_array)
+        return {
+            "message": "Behavior profile saved. Per-user model retraining started.",
+            "behavior_profile": payload,
+            "model_training": {
+                "started": True,
+                "scope": "user-specific-ppo",
+                "user_id": str(current_user.id),
+            },
+        }
 
     if settings.DEMO_MODE:
         demo_store.update_profile(
@@ -206,8 +216,17 @@ async def submit_behavior_assessment(request: BehaviorAssessmentRequest, current
             risk_category=category,
             behavior_profile=payload,
         )
+        trigger_user_retraining(str(current_user.id), behavior_array)
 
-    return {"message": "Behavior profile computed (demo)", "behavior_profile": payload}
+    return {
+        "message": "Behavior profile computed (demo). Per-user model retraining started.",
+        "behavior_profile": payload,
+        "model_training": {
+            "started": True,
+            "scope": "user-specific-ppo",
+            "user_id": str(current_user.id),
+        },
+    }
 
 
 @router.get("/")
@@ -295,6 +314,12 @@ async def get_trade_history(current_user=Depends(get_current_user)):
         }
 
     return {"trades": [], "total_pnl": 0.0, "win_rate": 0.0}
+
+
+@router.get("/model-training-status")
+async def model_training_status(current_user=Depends(get_current_user)):
+    """Get per-user model training status."""
+    return get_user_training_status(str(current_user.id))
 
 
 @router.post("/trades/evaluate")

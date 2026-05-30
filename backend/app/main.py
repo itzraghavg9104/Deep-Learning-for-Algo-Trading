@@ -4,10 +4,12 @@ Algo Trading System - FastAPI Backend
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import asyncio
 
 from app.api.routes import trading, backtest, profile, auth
 from app.api import websocket as websocket_router
 from app.config import settings
+from app.services.model_bootstrap import ensure_models_ready
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ async def validate_runtime_security():
         raise RuntimeError("Unsafe production configuration: " + " | ".join(issues))
     if settings.APP_ENV.lower() != "production" and settings.DEMO_MODE:
         logger.warning("Running with DEMO_MODE=True. This is only for local/demo use.")
+    await asyncio.to_thread(ensure_models_ready)
 
 
 @app.get("/")

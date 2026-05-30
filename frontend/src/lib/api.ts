@@ -127,6 +127,11 @@ export const profileApi = {
     return response.data;
   },
 
+  getModelTrainingStatus: async () => {
+    const response = await api.get("/profile/model-training-status");
+    return response.data;
+  },
+
   updatePreferences: async (preferences: {
     use_sentiment: boolean;
     preferred_timeframe: string;

@@ -12,6 +12,7 @@ from typing import Dict, Optional, List
 from sklearn.preprocessing import MinMaxScaler
 
 from app.layer1_data_processing.market_data import fetch_market_data_sync
+from app.layer2_decision.action_space import ACTION_LABELS
 
 
 class StockLSTM(nn.Module):
@@ -92,7 +93,13 @@ class PredictionService:
             print(f"Error loading model: {e}")
             self.model = None
     
-    def get_ppo_signal(self, symbol: str, risk_tolerance: float = 0.5) -> Dict:
+    def get_ppo_signal(
+        self,
+        symbol: str,
+        risk_tolerance: float = 0.5,
+        behavior_array: Optional[Dict[str, float]] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
         """
         Get trading signal using the PPO agent.
         
@@ -104,36 +111,43 @@ class PredictionService:
             df = fetch_market_data_sync(symbol, period="1mo", interval="1d")
             
             if df is None or len(df) < 30:
-                return {"action": "HOLD", "confidence": 0.5, "error": "Insufficient data for PPO"}
+                return {"action": "IDLE", "confidence": 0.5, "error": "Insufficient data for PPO"}
             
             # 2. Initialize a temporary environment to get the state
             from app.layer2_decision.trading_env import TradingEnv
-            env = TradingEnv(df=df, risk_tolerance=risk_tolerance)
+            env = TradingEnv(df=df, risk_tolerance=risk_tolerance, behavior_array=behavior_array)
             obs, _ = env.reset()
             
             # 3. Load PPO model and predict
             from stable_baselines3 import PPO
             from app.config import settings
             ppo_model_path = os.path.join(settings.MODEL_PATH, "ppo_trading_final.zip")
+            if user_id:
+                user_model_path = os.path.join(settings.MODEL_PATH, "users", str(user_id), "ppo_trading_final.zip")
+                if os.path.exists(user_model_path):
+                    ppo_model_path = user_model_path
             
             if not os.path.exists(ppo_model_path):
-                return {"action": "HOLD", "confidence": 0.5, "error": "PPO model not found"}
+                return {"action": "IDLE", "confidence": 0.5, "error": "PPO model not found"}
             
             ppo_model = PPO.load(ppo_model_path)
             action, _states = ppo_model.predict(obs, deterministic=True)
             
-            # Action mapping: 0=HOLD, 1=BUY, 2=SELL
-            actions = ["HOLD", "BUY", "SELL"]
-            
             return {
-                "action": actions[int(action)],
+                "action": ACTION_LABELS[int(action)],
                 "confidence": 0.8,  # PPO doesn't give direct confidence easily, use constant or probe policy
                 "model": "PPO"
             }
         except Exception as e:
-            return {"action": "HOLD", "confidence": 0.5, "error": str(e)}
+            return {"action": "IDLE", "confidence": 0.5, "error": str(e)}
 
-    def predict(self, symbol: str, risk_tolerance: float = 0.5) -> Dict:
+    def predict(
+        self,
+        symbol: str,
+        risk_tolerance: float = 0.5,
+        behavior_array: Optional[Dict[str, float]] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
         """
         Make a prediction for a given stock symbol using both LSTM and PPO.
         """
@@ -141,7 +155,12 @@ class PredictionService:
         lstm_result = self._get_lstm_prediction(symbol)
         
         # Get PPO Signal
-        ppo_result = self.get_ppo_signal(symbol, risk_tolerance)
+        ppo_result = self.get_ppo_signal(
+            symbol,
+            risk_tolerance,
+            behavior_array=behavior_array,
+            user_id=user_id,
+        )
         
         # Merge results
         final_result = lstm_result.copy()
@@ -211,7 +230,7 @@ class PredictionService:
                 action = "SELL"
                 confidence = min(0.5 + abs(change_pct) / 10, 0.95)
             else:
-                action = "HOLD"
+                action = "IDLE"
                 confidence = 0.5
             
             return {

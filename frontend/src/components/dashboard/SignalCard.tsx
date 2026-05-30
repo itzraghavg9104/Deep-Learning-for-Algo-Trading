@@ -2,6 +2,7 @@
 
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Sparkline } from "@/components/charts/Sparkline";
+import { ACTIONS, formatChangePct, normalizeAction } from "@/lib/trading-format";
 
 interface SignalCardProps {
     symbol: string;
@@ -9,6 +10,7 @@ interface SignalCardProps {
     change_pct: number;
     action: string;
     confidence: number;
+    target_price?: number | null;
     onClick?: () => void;
     sparkline?: number[];
     flash?: "up" | "down";
@@ -20,15 +22,20 @@ export function SignalCard({
     change_pct,
     action,
     confidence,
+    target_price,
     onClick,
     sparkline,
     flash,
 }: SignalCardProps) {
+    const normalizedAction = normalizeAction(action);
+
     const getActionColor = () => {
-        switch (action) {
-            case "BUY":
+        switch (normalizedAction) {
+            case ACTIONS.BUY:
+            case ACTIONS.HOLD_BUY:
                 return "bg-green-500/20 text-green-400 border-green-500/30";
-            case "SELL":
+            case ACTIONS.SELL:
+            case ACTIONS.HOLD_SELL:
                 return "bg-red-500/20 text-red-400 border-red-500/30";
             default:
                 return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
@@ -36,10 +43,12 @@ export function SignalCard({
     };
 
     const getActionIcon = () => {
-        switch (action) {
-            case "BUY":
+        switch (normalizedAction) {
+            case ACTIONS.BUY:
+            case ACTIONS.HOLD_BUY:
                 return <TrendingUp className="w-5 h-5" />;
-            case "SELL":
+            case ACTIONS.SELL:
+            case ACTIONS.HOLD_SELL:
                 return <TrendingDown className="w-5 h-5" />;
             default:
                 return <Minus className="w-5 h-5" />;
@@ -70,7 +79,7 @@ export function SignalCard({
                     className={`px-3 py-1 rounded-full text-sm font-medium border ${getActionColor()} flex items-center gap-1`}
                 >
                     {getActionIcon()}
-                    {action}
+                    {normalizedAction}
                 </div>
             </div>
 
@@ -80,8 +89,7 @@ export function SignalCard({
                     <p
                         className={`text-sm ${isPositive ? "text-green-400" : "text-red-400"}`}
                     >
-                        {isPositive ? "+" : ""}
-                        {change_pct.toFixed(2)}%
+                        {formatChangePct(change_pct)}
                     </p>
                 </div>
                 <div className="text-right">
@@ -89,6 +97,11 @@ export function SignalCard({
                     <p className="text-lg font-semibold text-blue-400">
                         {(confidence * 100).toFixed(0)}%
                     </p>
+                    {(normalizedAction === ACTIONS.BUY || normalizedAction === ACTIONS.SELL || normalizedAction === ACTIONS.HOLD_BUY || normalizedAction === ACTIONS.HOLD_SELL) && target_price ? (
+                        <p className="text-xs text-gray-400 mt-1">
+                            Target: ₹{target_price.toFixed(2)}
+                        </p>
+                    ) : null}
                 </div>
             </div>
 

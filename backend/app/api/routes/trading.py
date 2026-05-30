@@ -24,7 +24,7 @@ class SignalResponse(BaseModel):
     """Trading signal response model."""
     symbol: str
     timestamp: datetime
-    action: str  # BUY, SELL, HOLD
+    action: str  # HOLD BUY, HOLD SELL, BUY, SELL, IDLE
     confidence: float
     prediction: dict
     indicators: dict
@@ -54,7 +54,13 @@ class MarketDataResponse(BaseModel):
 async def get_trading_signal(
     symbol: str,
     use_sentiment: bool = Query(False, description="Include sentiment analysis"),
-    use_model: bool = Query(True, description="Use trained LSTM model")
+    use_model: bool = Query(True, description="Use trained LSTM model"),
+    user_id: Optional[str] = Query(None, description="User id for user-specific PPO model"),
+    risk_tolerance: float = Query(0.5, ge=0.0, le=1.0, description="Risk tolerance profile value"),
+    capital_per_trade_pref: float = Query(0.1, ge=0.0, le=1.0),
+    tp_sl_pref: float = Query(0.4, ge=0.0, le=1.0),
+    max_drawdown_pref: float = Query(0.2, ge=0.0, le=1.0),
+    cooldown_pref: float = Query(0.1, ge=0.0, le=1.0),
 ):
     """
     Get trading signal for a symbol using trained LSTM model.
@@ -80,7 +86,17 @@ async def get_trading_signal(
         # Get prediction from trained model
         if use_model and PREDICTION_AVAILABLE:
             pred_service = get_prediction_service()
-            model_pred = pred_service.predict(symbol)
+            model_pred = pred_service.predict(
+                symbol,
+                risk_tolerance=risk_tolerance,
+                behavior_array={
+                    "capital_per_trade_pct": capital_per_trade_pref,
+                    "tp_sl_ratio_preference": tp_sl_pref,
+                    "drawdown_sensitivity": max_drawdown_pref,
+                    "post_loss_rest_min": cooldown_pref,
+                },
+                user_id=user_id,
+            )
             
             if model_pred.get("error") is None:
                 return {
@@ -109,7 +125,7 @@ async def get_trading_signal(
         return {
             "symbol": symbol,
             "timestamp": datetime.now().isoformat(),
-            "action": "HOLD",
+            "action": "IDLE",
             "confidence": 0.5,
             "prediction": prediction,
             "indicators": indicators
@@ -178,9 +194,42 @@ async def get_watchlist_signals():
         "INFY.NS",
         "HDFCBANK.NS",
         "ICICIBANK.NS",
+        "SBIN.NS",
+        "BHARTIARTL.NS",
+        "ITC.NS",
+        "KOTAKBANK.NS",
+        "LT.NS",
+        "HINDUNILVR.NS",
+        "AXISBANK.NS",
+        "BAJFINANCE.NS",
+        "MARUTI.NS",
+        "ASIANPAINT.NS",
+        "WIPRO.NS",
+        "HCLTECH.NS",
+        "SUNPHARMA.NS",
+        "TITAN.NS",
+        "TATAMOTORS.NS",
     ]
-    
+    index_symbols = [
+        ("NIFTY 50", "^NSEI"),
+        ("NIFTY MIDCAP 150", "NIFTYMIDCAP150.NS"),
+        ("NIFTY SMALLCAP 250", "NIFTYSMLCAP250.NS"),
+    ]
+
     signals = []
+    index_signals = []
+
+    async def _day_change(symbol: str) -> Optional[dict]:
+        data = await get_market_data(symbol, period="1mo")
+        if data is None or data.empty:
+            return None
+        current = data.iloc[-1]
+        prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
+        change_pct = ((current["Close"] - prev["Close"]) / prev["Close"]) * 100 if prev["Close"] else 0.0
+        return {
+            "price": float(current["Close"]),
+            "change_pct": float(change_pct),
+        }
     
     # Try to use prediction service
     if PREDICTION_AVAILABLE:
@@ -188,29 +237,31 @@ async def get_watchlist_signals():
         for symbol in symbols:
             try:
                 pred = pred_service.predict(symbol)
-                if pred.get("error") is None:
+                day = await _day_change(symbol)
+                if pred.get("error") is None and day is not None:
+                    action = pred["action"]
+                    target_price = round(pred["predicted_price"], 2) if action in ("BUY", "SELL", "HOLD BUY", "HOLD SELL") else None
                     signals.append({
                         "symbol": symbol,
-                        "price": round(pred["current_price"], 2),
+                        "price": round(day["price"], 2),
                         "predicted_price": round(pred["predicted_price"], 2),
-                        "change_pct": round(pred["change_pct"], 2),
-                        "action": pred["action"],
+                        "target_price": target_price,
+                        "change_pct": round(day["change_pct"], 2),
+                        "action": action,
                         "confidence": round(pred["confidence"], 2),
                         "model": pred["model"]
                     })
                 else:
                     # Fallback for this symbol
-                    data = await get_market_data(symbol, period="1mo")
-                    if data is not None and not data.empty:
-                        current = data.iloc[-1]
-                        prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
-                        change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
+                    day = await _day_change(symbol)
+                    if day is not None:
                         signals.append({
                             "symbol": symbol,
-                            "price": round(float(current['Close']), 2),
-                            "predicted_price": round(float(current['Close']), 2),
-                            "change_pct": round(float(change_pct), 2),
-                            "action": "HOLD",
+                            "price": round(day["price"], 2),
+                            "predicted_price": round(day["price"], 2),
+                            "target_price": None,
+                            "change_pct": round(day["change_pct"], 2),
+                            "action": "IDLE",
                             "confidence": 0.5,
                             "model": "fallback"
                         })
@@ -220,20 +271,38 @@ async def get_watchlist_signals():
         # Fallback mode without model
         for symbol in symbols:
             try:
-                data = await get_market_data(symbol, period="1mo")
-                if data is not None and not data.empty:
-                    current = data.iloc[-1]
-                    prev = data.iloc[-2] if len(data) > 1 else data.iloc[-1]
-                    change_pct = ((current['Close'] - prev['Close']) / prev['Close']) * 100
-                    
+                day = await _day_change(symbol)
+                if day is not None:
                     signals.append({
                         "symbol": symbol,
-                        "price": round(float(current['Close']), 2),
-                        "change_pct": round(float(change_pct), 2),
-                        "action": "HOLD",
+                        "price": round(day["price"], 2),
+                        "predicted_price": round(day["price"], 2),
+                        "target_price": None,
+                        "change_pct": round(day["change_pct"], 2),
+                        "action": "IDLE",
                         "confidence": 0.5
                     })
             except Exception:
                 continue
-    
-    return {"signals": signals, "model_available": PREDICTION_AVAILABLE}
+
+    for label, symbol in index_symbols:
+        try:
+            day = await _day_change(symbol)
+            if day is not None:
+                index_signals.append(
+                    {
+                        "label": label,
+                        "symbol": symbol,
+                        "price": round(day["price"], 2),
+                        "change_pct": round(day["change_pct"], 2),
+                    }
+                )
+        except Exception:
+            continue
+
+    return {
+        "signals": signals,
+        "top20": signals,
+        "indices": index_signals,
+        "model_available": PREDICTION_AVAILABLE,
+    }

@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 from datetime import date, datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 from stable_baselines3 import PPO
 
@@ -11,8 +12,12 @@ from app.config import settings
 class BacktestService:
     """Service for running historical backtests using the trained PPO agent."""
     
-    def __init__(self, data_dir: str = "backend/data/raw"):
-        self.data_dir = data_dir
+    def __init__(self, data_dir: str | None = None):
+        if data_dir is None:
+            backend_root = Path(__file__).resolve().parents[2]
+            self.data_dir = str(backend_root / "data" / "raw")
+        else:
+            self.data_dir = data_dir
         self.model_path = os.path.join(settings.MODEL_PATH, "ppo_trading_final.zip")
         self._model = None
     
