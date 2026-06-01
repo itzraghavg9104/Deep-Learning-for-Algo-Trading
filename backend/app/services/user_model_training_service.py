@@ -81,6 +81,7 @@ def _train_user_models(user_id: str, behavior_array: Dict[str, Any]) -> None:
                     "ALL",
                     "--behavior-json",
                     json.dumps(current_behavior),
+                    "--skip-eval",
                 ],
             )
 
@@ -137,6 +138,24 @@ def get_user_training_status(user_id: str) -> Dict[str, Any]:
     if status:
         queued = user_id in _pending_behavior
         return {**status, "queued_update_pending": queued}
+    model_dir = _user_model_dir(user_id)
+    model_path = model_dir / "ppo_trading_final.zip"
+    meta_path = model_dir / "meta.json"
+    if model_path.exists():
+        trained_at = None
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                trained_at = meta.get("trained_at")
+            except Exception:
+                trained_at = None
+        return {
+            "status": "completed",
+            "message": "Existing trained PPO model found.",
+            "updated_at": trained_at or datetime.utcnow().isoformat(),
+            "queued_update_pending": False,
+            "model_path": str(model_path),
+        }
     return {
         "status": "idle",
         "message": "No training job yet.",

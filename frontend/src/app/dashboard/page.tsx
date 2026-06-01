@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { SignalCard, StatsCard } from "@/components/dashboard";
-import { tradingApi } from "@/lib/api";
+import { profileApi, tradingApi } from "@/lib/api";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { TechnicalIndicators } from "@/components/charts/TechnicalIndicators";
 import { SignalGauge } from "@/components/charts/SignalGauge";
@@ -18,6 +18,12 @@ interface Signal {
     action: string;
     confidence: number;
     target_price?: number | null;
+    trade_plan?: {
+        capital_per_trade_pct?: number;
+        tp_sl_ratio_target?: number;
+        capital_amount_inr?: number;
+        profit_target_exit_price?: number;
+    } | null;
 }
 type IndexSignal = { label: string; symbol: string; price: number; change_pct: number };
 
@@ -63,7 +69,35 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
         try {
-            const data = await tradingApi.getWatchlist();
+            let params: Record<string, number | string> = {};
+            try {
+                const profile = await profileApi.getProfile();
+                const behavior = profile?.behavior_profile?.behavior_array || {};
+                const riskTolerance = Number(profile?.risk_profile?.tolerance ?? 0.5);
+                params = {
+                    user_id: String(profile?.id ?? ""),
+                    risk_tolerance: Number.isFinite(riskTolerance) ? riskTolerance : 0.5,
+                    capital_per_trade_pref: Number(behavior.capital_per_trade_pct ?? 0.1),
+                    tp_sl_pref: Number(behavior.tp_sl_ratio_preference ?? 0.25),
+                    max_profit_pref: Number(behavior.max_profit_close_pct ?? 0.2),
+                    max_drawdown_pref: Number(behavior.drawdown_sensitivity ?? 0.2),
+                    cooldown_pref: Number(behavior.post_loss_rest_min ?? 0.1),
+                    trade_frequency_pref: Number(behavior.trade_frequency_window_score ?? 0.15),
+                    holding_time_pref: Number(behavior.avg_holding_time_score ?? 0.2),
+                    streak_adjustment_pref: Number(behavior.streak_risk_adjustment ?? 0.25),
+                    intraday_var_pref: Number(behavior.intraday_var_limit ?? 0.1),
+                    slippage_pref: Number(behavior.entry_slippage_tolerance_bps ?? 0.1),
+                    session_bias_pref: Number(behavior.time_of_day_performance_bias ?? 0.5),
+                    news_buffer_pref: Number(behavior.news_proximity_buffer_min ?? 0.1),
+                    partial_tp_pref: Number(behavior.partial_tp_preference ?? 0.5),
+                    breakeven_trigger_pref: Number(behavior.breakeven_migration_trigger_pct ?? 0.1),
+                    breakeven_time_pref: Number(behavior.breakeven_migration_time_min ?? 0.2),
+                };
+            } catch {
+                // profile unavailable; use server defaults
+            }
+
+            const data = await tradingApi.getWatchlist(params);
             const normalizedSignals = ((data.top20 || data.signals) || []).map((signal: Signal) => ({
                 ...signal,
                 action: normalizeAction(signal.action),
@@ -93,6 +127,13 @@ export default function DashboardPage() {
     // Initial fetch
     useEffect(() => {
         fetchSignals();
+    }, [fetchSignals]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchSignals();
+        }, 30000);
+        return () => clearInterval(interval);
     }, [fetchSignals]);
 
     useEffect(() => {
@@ -327,6 +368,7 @@ export default function DashboardPage() {
                                 action={signal.action}
                                 confidence={signal.confidence}
                                 target_price={signal.target_price}
+                                trade_plan={signal.trade_plan}
                                 sparkline={sparklineBySymbol[signal.symbol]?.values}
                                 flash={flashBySymbol[signal.symbol]}
                                 onClick={() => openSymbol(signal.symbol)}

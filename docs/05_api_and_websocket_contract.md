@@ -27,12 +27,12 @@ Register a new user account.
 
 **Errors:**
 - `400` — Email already registered, or "Register via Firebase client SDK when FIREBASE_AUTH_ENABLED=true"
-- `422` — Validation error (invalid email, etc.)
+- `422` — Validation error (invalid email, password too short, etc.)
 
 **Mode-specific behavior:**
 - **Firebase mode**: Always returns 400 — registration must happen via Firebase SDK client-side
 - **Demo mode**: Stores in DemoStore (in-memory), auto-incrementing integer ID
-- **Normal mode**: Stores in PostgreSQL via DBService, UUID or serial ID
+- **Normal mode**: Stores in PostgreSQL via DBService.create_user, serial ID
 
 ---
 
@@ -40,7 +40,7 @@ Register a new user account.
 
 Authenticate and receive JWT token.
 
-**Request:** (application/x-www-form-urlencoded)
+**Request:** (application/x-www-form-urlencoded via OAuth2PasswordRequestForm)
 ```
 username: user@example.com
 password: securepassword123
@@ -61,7 +61,7 @@ password: securepassword123
 **Mode-specific behavior:**
 - **Firebase mode**: Always returns 400 — login must happen via Firebase SDK client-side
 - **Demo mode**: Auto-creates user if not found, skips password verification entirely, returns JWT with `sub=email`
-- **Normal mode**: Verifies password via bcrypt, queries PostgreSQL, returns JWT with `sub=email`
+- **Normal mode**: Verifies password via bcrypt `checkpw`, queries PostgreSQL via DBService.get_user_by_email, returns JWT with `sub=email`
 
 **JWT Claims:**
 ```json
@@ -97,7 +97,7 @@ Get current authenticated user profile.
 **Mode-specific behavior:**
 - **Firebase mode**: Verifies Firebase ID token via `verify_firebase_token()`, upserts user in Firestore, returns Firestore user data
 - **Demo mode**: Decodes JWT, extracts `sub` (email), auto-provisions demo user if not found, returns demo user
-- **Normal mode**: Decodes JWT, queries PostgreSQL via DBService
+- **Normal mode**: Decodes JWT, queries PostgreSQL via DBService.get_user_by_email
 
 ---
 
@@ -115,14 +115,14 @@ Get AI-powered trading signal for a stock symbol.
 **Query Parameters:**
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| use_sentiment | bool | false | Include sentiment analysis (not yet implemented) |
-| use_model | bool | true | Use trained LSTM/PPO models |
-| user_id | str | null | User ID for user-specific PPO model |
-| risk_tolerance | float | 0.5 | Risk tolerance (0.0–1.0) |
-| capital_per_trade_pref | float | 0.1 | Capital allocation preference |
-| tp_sl_pref | float | 0.4 | Take-profit/stop-loss ratio |
-| max_drawdown_pref | float | 0.2 | Max drawdown sensitivity |
-| cooldown_pref | float | 0.1 | Post-loss cooldown period |
+| `use_sentiment` | bool | false | Include sentiment analysis (not yet implemented) |
+| `use_model` | bool | true | Use trained LSTM/PPO models |
+| `user_id` | str | null | User ID for user-specific PPO model |
+| `risk_tolerance` | float | 0.5 | Risk tolerance (0.0–1.0) |
+| `capital_per_trade_pref` | float | 0.1 | Capital allocation preference |
+| `tp_sl_pref` | float | 0.4 | Take-profit/stop-loss ratio |
+| `max_drawdown_pref` | float | 0.2 | Max drawdown sensitivity |
+| `cooldown_pref` | float | 0.1 | Post-loss cooldown period |
 
 **Response (200):**
 ```json
@@ -194,6 +194,11 @@ When models are unavailable (not loaded, missing files, or errors):
 - Model: "fallback"
 - predicted_price = current_price, change_pct = 0.0
 
+**Confidence calculation:**
+- LSTM: `min(0.5 + |change_pct|/10, 0.95)` based on predicted price movement magnitude
+- PPO: Hardcoded to 0.8 (not derived from policy action probabilities)
+- Rule-based: Fixed at 0.5
+
 ---
 
 ### GET /trading/market/{symbol}
@@ -235,13 +240,16 @@ Get market data and technical indicators for a symbol.
 }
 ```
 
-**History limit:** Last 180 data points returned (approximately 9 months of daily data).
+**History limit:** Last 180 data points returned (approximately 9 months of daily data). Truncated via `history[-180:]`.
 
 ---
 
 ### GET /trading/watchlist
 
 Get signals for 20 major NIFTY 50 stocks plus 3 index indicators.
+
+**Watchlist Symbols (20):**
+RELIANCE.NS, TCS.NS, INFY.NS, HDFCBANK.NS, ICICIBANK.NS, SBIN.NS, BHARTIARTL.NS, ITC.NS, KOTAKBANK.NS, LT.NS, HINDUNILVR.NS, AXISBANK.NS, BAJFINANCE.NS, MARUTI.NS, ASIANPAINT.NS, WIPRO.NS, HCLTECH.NS, SUNPHARMA.NS, TITAN.NS, TATAMOTORS.NS
 
 **Response (200):**
 ```json
@@ -286,8 +294,12 @@ Get signals for 20 major NIFTY 50 stocks plus 3 index indicators.
 }
 ```
 
-**Watchlist Symbols (20):**
-RELIANCE.NS, TCS.NS, INFY.NS, HDFCBANK.NS, ICICIBANK.NS, SBIN.NS, BHARTIARTL.NS, ITC.NS, KOTAKBANK.NS, LT.NS, HINDUNILVR.NS, AXISBANK.NS, BAJFINANCE.NS, MARUTI.NS, ASIANPAINT.NS, WIPRO.NS, HCLTECH.NS, SUNPHARMA.NS, TITAN.NS, TATAMOTORS.NS
+**Internal flow:**
+1. Iterates over 20 predefined symbols
+2. For each: `get_market_data(symbol, "2d")` → compute change_pct
+3. If model available: runs prediction for each symbol
+4. Fetches 3 index symbols separately
+5. Returns combined response
 
 ---
 
@@ -340,15 +352,15 @@ Execute a historical backtest simulation.
 ```
 
 **Errors:**
-- `400` — Insufficient data for the specified date range
+- `400` — Insufficient data for the specified date range (< 50 data points)
 - `404` — No data file found for symbol
 - `422` — Validation error (invalid dates, negative capital, etc.)
 
 **Backend process:**
-1. Loads CSV from `data/raw/{symbol}.csv` (strips `.NS` suffix)
+1. Loads CSV from `data/raw/{symbol}.csv` (strips `.NS` suffix from filename)
 2. Filters by date range, requires ≥50 data points
 3. Creates TradingEnv with the filtered data
-4. Runs PPO model (or random actions if model unavailable)
+4. Runs PPO model (or random actions if model unavailable): loop predict → step → check done
 5. Returns metrics from `env.get_episode_metrics()`
 
 ---
@@ -360,7 +372,7 @@ Retrieve a previously run backtest result.
 **Path Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| backtest_id | str | ID returned from POST /backtest/run |
+| backtest_id | str | ID returned from POST /backtest/run (string in demo/firebase, int in DB mode) |
 
 **Response (200):**
 Same structure as POST /backtest/run response.
@@ -410,7 +422,7 @@ Minimum 4 answers required.
 
 ### POST /profile/behavior-assessment
 
-Submit the full behavior assessment questionnaire (30 questions).
+Submit the full behavior assessment questionnaire (30+ questions, mapped to 15-dim behavior array).
 
 **Request:**
 ```json
@@ -440,7 +452,7 @@ Submit the full behavior assessment questionnaire (30 questions).
 }
 ```
 
-At least 24 question scores required (via `question_scores` array or `q_*` keys).
+At least 24 question scores required (via `question_scores` array or `q_*` prefixed keys in answers dict).
 
 **Response (200):**
 ```json
@@ -483,8 +495,12 @@ At least 24 question scores required (via `question_scores` array or `q_*` keys)
 ```
 
 **Side effects:**
-- Triggers per-user PPO retraining (async, daemon thread)
+- Triggers per-user PPO retraining via `user_model_training_service.trigger_user_retraining()` (async, daemon thread)
 - In Firebase mode: saves to Firestore under `users/{uid}/behavior_profiles/latest`
+- In Demo mode: saves to in-memory DemoStore
+
+**Behavior Array Normalization (15 fields):**
+See §2.3.4 in backend architecture doc for full normalization rules. All fields are mapped from raw answers to 0–1 range via division by a max value.
 
 ---
 
@@ -583,7 +599,7 @@ Get the status of per-user PPO model training.
 
 ### POST /profile/trades/evaluate
 
-Evaluate a planned vs executed trade for compliance.
+Evaluate a planned vs executed trade for compliance with user's behavior profile.
 
 **Request:**
 ```json
@@ -750,7 +766,7 @@ Health check — server responds with `{"type": "pong"}`.
 }
 ```
 
-Broadcast occurs once every ~30 seconds (controlled by `asyncio.sleep(30)` loop). Only symbols that are actively subscribed by the connection are included.
+Broadcast occurs once every ~30 seconds (controlled by `asyncio.sleep(30)` loop in `sender_loop()`). Only symbols that are actively subscribed by the connection are included.
 
 #### Pong
 ```json
@@ -766,6 +782,7 @@ Broadcast occurs once every ~30 seconds (controlled by `asyncio.sleep(30)` loop)
 4. **Unsubscribe/Set**: Client can modify subscriptions at any time
 5. **Ping**: Client can verify connection health
 6. **Disconnect**: Connection cleanup occurs in `finally` block (no explicit close message)
+7. **Error handling**: Per-symbol exceptions caught and logged without crashing the connection loop
 
 ### Implementation Notes
 - Each WebSocket connection maintains its own `set()` of subscribed symbols
@@ -773,6 +790,7 @@ Broadcast occurs once every ~30 seconds (controlled by `asyncio.sleep(30)` loop)
 - Symbol normalization applies `.NS` suffix automatically via `normalize_symbol()`
 - The server loop catches and logs exceptions per-symbol without crashing the connection
 - No authentication required on the WebSocket endpoint
+- The frontend hook (`use-websocket.ts`) handles reconnection with exponential backoff (1s → 2s → 4s → 8s → 10s cap)
 
 ## 5.7 Error Response Format
 
@@ -788,11 +806,11 @@ HTTP Status Codes Used:
 | Code | Meaning | Common Scenarios |
 |------|---------|-----------------|
 | 200 | Success | Request completed successfully |
-| 400 | Bad Request | Validation error, missing data, Firebase-mode auth |
-| 401 | Unauthorized | Invalid/expired token |
-| 404 | Not Found | Symbol not found, data not found |
-| 422 | Validation Error | Pydantic schema validation failure |
-| 500 | Internal Server Error | Unexpected exception, model failure |
+| 400 | Bad Request | Validation error, missing data, Firebase-mode auth, insufficient data points |
+| 401 | Unauthorized | Invalid/expired token, Firebase token verification failure |
+| 404 | Not Found | Symbol not found, data file not found, backtest ID not found |
+| 422 | Validation Error | Pydantic schema validation failure (invalid types, missing required fields) |
+| 500 | Internal Server Error | Unexpected exception, model failure, yfinance connection error |
 
 ## 5.8 Authentication Header
 
@@ -801,9 +819,9 @@ All protected endpoints require:
 Authorization: Bearer <token>
 ```
 
-- **Demo mode**: Token is JWT signed with `JWT_SECRET` using HS256
-- **Firebase mode**: Token is Firebase ID token (JWT signed by Firebase)
-- **Normal mode**: Token is JWT signed with `JWT_SECRET` using HS256
+- **Demo mode**: Token is JWT signed with `JWT_SECRET` using HS256, with `sub=email`
+- **Firebase mode**: Token is Firebase ID token (JWT signed by Firebase's private key, verified by Firebase Admin SDK)
+- **Normal mode**: Token is JWT signed with `JWT_SECRET` using HS256, with `sub=email`
 
 ## 5.9 API Documentation
 
@@ -811,4 +829,23 @@ Interactive API documentation available when the backend is running:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-These are auto-generated from FastAPI route decorators and Pydantic models.
+These are auto-generated from FastAPI route decorators and Pydantic models. They reflect all endpoints, request/response schemas, and validation rules.
+
+## 5.10 CORS Headers
+
+The backend sets permissive CORS headers for development:
+- `Access-Control-Allow-Origin`: `http://localhost:3000` and `http://127.0.0.1:3000`
+- `Access-Control-Allow-Credentials`: `true`
+- `Access-Control-Allow-Methods`: `*`
+- `Access-Control-Allow-Headers`: `*`
+
+For production, `CORS_ORIGINS` in `config.py` must be updated with actual frontend domain(s).
+
+## 5.11 Known API Limitations
+
+- **No rate limiting** — Endpoints are unprotected against excessive calls
+- **No pagination** — Trade history and backtest lists return all results at once
+- **No request logging** — Request/response logging not configured for endpoints
+- **WebSocket auth not enforced** — The WebSocket endpoint has no authentication check
+- **Trading endpoints are public** — Signal/market/watchlist routes have no auth dependency
+- **Backtest user_id hardcoded** — `get_current_user` returns placeholder "1" in backtest routes

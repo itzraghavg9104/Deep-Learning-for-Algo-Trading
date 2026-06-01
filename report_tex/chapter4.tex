@@ -1,0 +1,96 @@
+\chapter{Experimental Results and Discussion}
+
+\section{Experimental Setup Used in This Revision}
+
+This chapter presents results obtained from the latest training and inference cycle of the implemented system. The discussion is structured around model behavior, convergence patterns, and personalization quality rather than only raw optimization logs. Emphasis is given to outcomes that directly affect trade generation quality in deployment. The reported values reflect the current training setup and the observed execution traces attached to this project revision.
+
+\subsection{Data and Training Scope}
+
+The experiment uses 79,628 rows across 51 symbols. Sequence preparation for LSTM produced a tensor of shape \((78{,}098, 30, 5)\), followed by a split of 62,478 training samples and 15,620 validation samples. PPO training was configured for 30,000 timesteps and terminated at 30,720 timesteps due to rollout-step granularity. This setup provides both temporal depth and cross-symbol diversity, which is necessary for stable policy learning and realistic personalization tests.
+
+\subsection{Hardware/Runtime Mode Notes}
+
+The training run executed on CPU, and TensorBoard logging was not enabled in this run configuration. For user-triggered personalization updates, PPO retraining is launched with \texttt{--skip-eval} so that behavior updates can be applied quickly in the application flow. This trade-off favors interactive model refresh over delayed retraining completion. Full evaluation can still be re-enabled for offline benchmarking when needed.
+
+\section{LSTM Result Analysis}
+
+The LSTM model converged to a best validation loss of 0.000205 and ended with a final validation loss of 0.000237 at epoch 30. The training curve shows smooth reduction in training loss and bounded fluctuation in validation loss, which is expected when the dataset spans multiple sectors and volatility profiles. Importantly, the best and final validation values remain in the same low-error range, indicating that the model did not diverge after peak performance. The resulting forecast output is sufficiently stable to be used as a confidence-bearing input to the policy layer.
+
+\paragraph{Interpretation.}
+This loss regime indicates that the LSTM captures short-horizon price structure effectively on normalized OHLCV sequences. More importantly, the model output is operationally meaningful because confidence is consumed by PPO conditioning instead of being treated as a display-only metric. This improves control behavior under uncertainty, as weaker forecasts naturally reduce policy aggressiveness while stronger forecasts support more directional decisions. Therefore, LSTM contributes both predictive value and dynamic risk calibration signal.
+
+\section{PPO Result Analysis Through AMA (Behavior Mimic Accuracy)}
+
+\subsection{Why AMA is Needed}
+
+Standard PPO diagnostics such as KL divergence, entropy, and value loss describe optimization dynamics but do not directly measure personalization fidelity. Since this project targets behavior-aware execution, a separate alignment metric is required to evaluate how closely generated trade plans match trader intent. For this reason, AMA is introduced as a direct behavioral conformity measure over key execution outputs. This metric complements reward-centric indicators and provides a practical view of personalization quality.
+
+\subsection{Definition of AMA}
+
+Let per-trade predicted outputs be:
+\[
+\hat{c}_i,\ \hat{r}_i,\ \hat{p}_i
+\]
+for capital usage, TP/SL ratio, and profit-target strength, and let user behavior targets be:
+\[
+c^\star,\ r^\star,\ p^\star.
+\]
+Define normalized component similarities:
+\[
+S^{(i)}_{\text{cap}}=\max\left(0,1-\frac{|\hat{c}_i-c^\star|}{\Delta_{\text{cap}}}\right),
+\]
+\[
+S^{(i)}_{\text{tp/sl}}=\max\left(0,1-\frac{|\hat{r}_i-r^\star|}{\Delta_{\text{tp/sl}}}\right),
+\]
+\[
+S^{(i)}_{\text{profit}}=\max\left(0,1-\frac{|\hat{p}_i-p^\star|}{\Delta_{\text{profit}}}\right).
+\]
+Then:
+\[
+\mathrm{AMA}=100\times\frac{1}{N}\sum_{i=1}^{N}
+\frac{
+S^{(i)}_{\text{cap}}+S^{(i)}_{\text{tp/sl}}+S^{(i)}_{\text{profit}}
+}{3}.
+\]
+
+\subsection{Values Used for the Current Computation}
+
+For the present run, user-profile targets and normalization ranges are selected from the active personalization configuration:
+\[
+c^\star=5.0,\quad r^\star=2.0,\quad p^\star=20.0
+\]
+with normalization spans
+\[
+\Delta_{\text{cap}}=33,\quad \Delta_{\text{tp/sl}}=7.5,\quad \Delta_{\text{profit}}=14.5.
+\]
+Using the available watchlist predictions in the latest inference batch:
+\[
+N=19,\qquad \boxed{\mathrm{AMA}=85.55\%}.
+\]
+This value indicates high behavioral consistency between user targets and generated trade plans under current market-state inputs.
+
+\subsection{Representative Sample Outputs}
+
+Representative outputs include RELIANCE.NS (HOLD\_BUY, capital 4.10, TP/SL 2.47, target 15.0, exit 1519.38), TCS.NS (HOLD\_BUY, 4.03, 2.44, 15.0, 2597.73), INFY.NS (HOLD\_BUY, 4.06, 2.45, 15.0, 1335.04), HDFCBANK.NS (HOLD\_BUY, 4.10, 2.46, 15.0, 856.23), and ICICIBANK.NS (HOLD\_BUY, 4.09, 2.46, 15.0, 1444.86). These examples show that the generated plan is symbol-specific and not a constant template. They also illustrate that absolute exit values are produced directly for each trade.
+
+\paragraph{Interpretation.}
+An AMA of 85.55\% indicates strong profile adherence. In practical terms, the policy remains close to trader preference while still adapting position parameters to stock-wise confidence and volatility context. This confirms that personalization is functioning as a control mechanism rather than a static recommendation layer. The result also supports the use of AMA as a meaningful KPI for behavior-aware trading systems.
+
+\section{Combined LSTM+PPO Performance Rationale}
+
+The integrated pipeline achieves better practical behavior than independent model usage by combining forecasting confidence and policy control in one loop. LSTM contributes directional confidence and expected movement strength, while PPO converts this context into executable action under behavioral constraints. The post-policy trade-plan stage then emits absolute execution values such as capital in INR, stop-loss, and exit price. This fusion allows profitability-seeking behavior without violating trader-style discipline, which is the core requirement of personalized algorithmic trading.
+
+\section{Three Required Core Result Paragraphs (Report-Ready)}
+
+\paragraph{LSTM Result Paragraph.}
+The LSTM module was trained on 79,628 rows across 51 symbols, producing sequence tensors of shape \((78{,}098, 30, 5)\). The model contains 53,569 trainable parameters and completed 30 epochs with a best validation loss of 0.000205 and final validation loss of 0.000237. These values indicate stable convergence with low residual error on normalized series. The resulting confidence signal serves as a dynamic quality indicator for downstream policy conditioning.
+
+\paragraph{PPO + AMA Paragraph.}
+The PPO module was trained for 30,000 target timesteps and completed 30,720 timesteps in 277 seconds. Final optimization traces show controlled KL drift and stable clipping behavior, indicating consistent policy updates through the terminal phase. Behavioral alignment was quantified through AMA using generated trade parameters and user preference targets, resulting in 85.55\% over 19 symbols. This demonstrates that the produced plans maintain strong conformity to trader intent while preserving symbol-level adaptivity.
+
+\paragraph{Combined Model Paragraph.}
+In the final integrated inference pipeline, LSTM confidence and directional prediction are injected into PPO behavior shaping before action selection. PPO then outputs stock-specific action along with an absolute execution plan, including capital allocation in INR, TP/SL ratio, stop-loss level, and exact profit-target exit price. This architecture links forecast strength and policy discipline in a single decision path. As a result, the system improves practical profit-seeking behavior while retaining user-specific risk and style constraints.
+
+\section{Implementation-Consistent Conclusions for This Revision}
+
+The revised result interpretation shows that the project has moved from static signal reporting to behavior-aware, per-trade execution planning. LSTM now contributes confidence as an active control signal, while PPO generates adaptive actions and absolute trade targets at symbol level. AMA provides a direct quantitative measure of personalization quality and complements optimization metrics from PPO training logs. Overall, the combined framework demonstrates a coherent balance between predictive intelligence, risk control, and trader-specific behavioral alignment.

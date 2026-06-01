@@ -1,0 +1,102 @@
+\chapter{Proposed Methodology}
+
+\section{System Design Objective}
+
+The objective of the proposed system is to build a personalized algorithmic trading engine that combines data-driven price forecasting, policy-based action selection, and trader-specific behavioral constraints. Instead of using prediction and execution as isolated modules, the architecture integrates both stages in a single decision pipeline. The design is centered on practical deployment for Indian equities, where volatility regimes, liquidity variation, and risk tolerance differ significantly across users. Therefore, each generated trade must reflect not only market conditions but also the behavioral profile of the trader.
+
+\section{End-to-End Architecture}
+
+\subsection{Layered Backend Structure}
+
+The backend follows a three-layer structure. The first layer processes market data and technical features, converting raw OHLCV streams into model-ready state representations. The second layer contains the reinforcement learning decision engine, where a PPO policy interacts with a custom Gymnasium trading environment and selects one of five discrete actions. The third layer applies trader behavior modeling, where questionnaire responses are transformed into a normalized behavioral vector that governs risk expression and trade aggressiveness. This separation keeps the system modular while preserving a consistent inference flow across all components.
+
+\subsection{Action and State Definition}
+
+The policy action space is defined as \texttt{HOLD\_BUY}, \texttt{HOLD\_SELL}, \texttt{BUY}, \texttt{SELL}, and \texttt{IDLE}. The environment observation is represented as a 34-dimensional vector that includes market context, portfolio state, and behavior-linked controls. This fixed-size state design allows stable policy training and deterministic deployment behavior. The five-action structure also prevents over-simplified binary decisions by explicitly modeling hold-bias states for both bullish and bearish contexts.
+
+\subsection{Training Data and Sequence Construction}
+
+The latest training run was conducted on 79,628 rows across 51 symbols. For LSTM training, the sequence tensor is prepared with shape \((78{,}098, 30, 5)\), using a 30-step temporal window. The resulting split contains 62,478 training sequences and 15,620 validation sequences. This scale is sufficient to capture multi-symbol market structure while still allowing repeated retraining cycles for personalization and iteration.
+
+\section{LSTM Model and Forecast Confidence}
+
+\subsection{Forecasting Role}
+
+The LSTM module is used for short-horizon price movement forecasting and confidence estimation. It predicts directional tendency and relative movement magnitude from recent sequential price behavior. In the implemented pipeline, the LSTM does not directly place trades; instead, it provides contextual information to the PPO layer. This design allows the policy network to incorporate both learned temporal signals and behavior-aware risk controls before selecting a final action.
+
+\subsection{Model Capacity and Training Behavior}
+
+The current LSTM configuration reports 53,569 trainable parameters. In the latest run, the best validation loss reached 0.000205 and the final validation loss at epoch 30 was 0.000237. These values indicate stable convergence with expected intermediate fluctuation. The model remains lightweight enough for practical retraining while preserving sufficient representational capacity for short-term forecasting over multi-symbol data.
+
+\begin{table}[h]
+\centering
+\caption{LSTM Training Progress (Latest Run)}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Epoch} & \textbf{Train Loss} & \textbf{Validation Loss} \\
+\hline
+5  & 0.002232 & 0.000448 \\
+10 & 0.002170 & 0.000232 \\
+15 & 0.002111 & 0.000482 \\
+20 & 0.002061 & 0.000205 \\
+25 & 0.002056 & 0.000378 \\
+30 & 0.002040 & 0.000237 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Confidence Propagation to Policy Layer}
+
+The LSTM stage emits prediction confidence together with projected movement features. These outputs are injected into PPO input conditioning, where confidence-weighted directional strength modifies effective behavior controls. As a result, the policy does not react to raw prediction alone; it reacts to prediction quality. This coupling is essential because it reduces overreaction during uncertain forecast regimes and allows stronger action bias when predictive confidence is high.
+
+\section{PPO Policy Learning and Decision Dynamics}
+
+\subsection{Training Configuration}
+
+The PPO agent was trained with a 30,000 timestep target and completed 30,720 timesteps due to rollout granularity. The total training time in the observed run was 277 seconds, with execution throughput around 109--115 fps. The key optimization settings include a learning rate of 0.0003 and a clip range of 0.2. These settings produced stable policy updates within practical training time for iterative development.
+
+\subsection{Optimization Characteristics}
+
+Late-stage PPO logs show \texttt{approx\_kl} around 0.0105 and controlled clip fraction at 0.0838 in the final snapshot. Entropy remained negative and stable, indicating continued policy regularization without mode collapse. Value loss decreased substantially in later iterations, which is consistent with improved critic fit. Although explained variance fluctuated near convergence, overall optimization remained numerically stable across the final update window.
+
+\begin{table}[h]
+\centering
+\caption{PPO Late-Stage Training Metrics (Latest Run)}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Metric} & \textbf{Intermediate} & \textbf{Final Snapshot} \\
+\hline
+total\_timesteps & 28,672 & 30,720 \\
+approx\_kl & 0.0109418 & 0.0105483 \\
+clip\_fraction & 0.1380 & 0.0838 \\
+entropy\_loss & -1.51 & -1.49 \\
+explained\_variance & 0.2190 & -0.0775 \\
+policy\_gradient\_loss & -0.0105 & -0.0114 \\
+value\_loss & 0.00493 & 0.00129 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Behavior Profiling and Personalization}
+
+\subsection{Behavior Vector Construction}
+
+Trader behavior is encoded through a normalized 15-dimensional vector derived from assessment responses. The feature set includes capital exposure preference, TP/SL bias, drawdown sensitivity, cooldown behavior, slippage tolerance, and breakeven management style. These features are not auxiliary metadata; they are integrated into policy conditioning for each inference cycle. This makes personalization an active component of the decision process rather than a post-hoc recommendation layer.
+
+\subsection{Retraining and User Adaptation}
+
+When a new behavior assessment is submitted, per-user PPO retraining is triggered asynchronously. This keeps the main application responsive while allowing the model to adapt to updated trader preferences. In the current workflow, retraining runs with skipped evaluation for faster turnaround during user-facing operation. The resulting model artifacts are stored per user and reused in subsequent signal generation requests.
+
+\section{Coupled Inference and Trade Plan Synthesis}
+
+\subsection{Integrated Inference Flow}
+
+The final inference path begins with LSTM forecast generation, followed by PPO action inference under confidence-conditioned behavior inputs. PPO returns both action and policy confidence, and these are combined with volatility context to compute trade execution parameters. This creates a fully coupled decision engine where forecasting and control influence each other within the same request cycle. The architecture therefore supports both directional intelligence and policy-level risk discipline.
+
+\subsection{Per-Trade Absolute Outputs}
+
+For each stock request, the system generates an absolute trade plan containing \texttt{capital\_amount\_inr}, \texttt{tp\_sl\_ratio\_target}, \texttt{profit\_target\_exit\_price}, \texttt{stop\_loss\_price}, and estimated quantity. These values are produced uniquely per trade, based on current price, confidence context, volatility, and behavior profile. The use of absolute exit values instead of only percentage targets improves execution clarity and reportability. This output design is also aligned with the frontend card representation used in the final UI.
+
+\section{Runtime Resilience}
+
+To prevent inference interruption when live market fetch fails, the system falls back to local symbol slices from \texttt{training\_data.csv}. This mechanism preserves signal generation continuity during transient network or upstream data outages. Consequently, the application maintains deterministic behavior in constrained environments and supports uninterrupted demonstrations or offline validation runs. The fallback path preserves structural compatibility with the standard inference pipeline.

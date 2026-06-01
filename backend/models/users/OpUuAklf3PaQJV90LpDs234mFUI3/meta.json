@@ -1,0 +1,22 @@
+{
+  "user_id": "OpUuAklf3PaQJV90LpDs234mFUI3",
+  "trained_at": "2026-06-01T06:02:43.768813",
+  "behavior_array": {
+    "capital_per_trade_pct": 0.05,
+    "tp_sl_ratio_preference": 0.25,
+    "max_profit_close_pct": 0.2,
+    "trade_frequency_window_score": 0.15,
+    "avg_holding_time_score": 0.023809523809523808,
+    "post_loss_rest_min": 0.03125,
+    "drawdown_sensitivity": 0.15,
+    "streak_risk_adjustment": 0.25,
+    "intraday_var_limit": 0.03,
+    "entry_slippage_tolerance_bps": 0.04,
+    "time_of_day_performance_bias": 0.6,
+    "news_proximity_buffer_min": 0.08333333333333333,
+    "partial_tp_preference": 0.5,
+    "breakeven_migration_trigger_pct": 0.01,
+    "breakeven_migration_time_min": 0.041666666666666664
+  },
+  "model_path": "/home/rhythm/Downloads/Major_Project/Deep-Learning-for-Algo-Trading/backend/models/users/OpUuAklf3PaQJV90LpDs234mFUI3/ppo_trading_final.zip"
+}

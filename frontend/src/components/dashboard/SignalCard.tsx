@@ -11,6 +11,12 @@ interface SignalCardProps {
     action: string;
     confidence: number;
     target_price?: number | null;
+    trade_plan?: {
+        capital_per_trade_pct?: number;
+        tp_sl_ratio_target?: number;
+        capital_amount_inr?: number;
+        profit_target_exit_price?: number;
+    } | null;
     onClick?: () => void;
     sparkline?: number[];
     flash?: "up" | "down";
@@ -23,6 +29,7 @@ export function SignalCard({
     action,
     confidence,
     target_price,
+    trade_plan,
     onClick,
     sparkline,
     flash,
@@ -108,6 +115,29 @@ export function SignalCard({
             {sparkline && sparkline.length > 0 && (
                 <div className="mt-3">
                     <Sparkline values={sparkline} positive={isPositive} />
+                </div>
+            )}
+
+            {trade_plan && (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="rounded-md border border-gray-700 bg-gray-900/60 p-2">
+                        <p className="text-[10px] uppercase text-gray-500">Capital</p>
+                        <p className="text-xs font-semibold text-cyan-300">
+                            ₹{(trade_plan.capital_amount_inr ?? 0).toFixed(0)}
+                        </p>
+                    </div>
+                    <div className="rounded-md border border-gray-700 bg-gray-900/60 p-2">
+                        <p className="text-[10px] uppercase text-gray-500">TP/SL</p>
+                        <p className="text-xs font-semibold text-cyan-300">
+                            {(trade_plan.tp_sl_ratio_target ?? 0).toFixed(2)}
+                        </p>
+                    </div>
+                    <div className="rounded-md border border-gray-700 bg-gray-900/60 p-2">
+                        <p className="text-[10px] uppercase text-gray-500">Exit</p>
+                        <p className="text-xs font-semibold text-cyan-300">
+                            ₹{(trade_plan.profit_target_exit_price ?? 0).toFixed(2)}
+                        </p>
+                    </div>
                 </div>
             )}
 

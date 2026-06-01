@@ -77,9 +77,20 @@ def train_ppo_agent(
         risk_tolerance=0.5,
         behavior_array=behavior_array or {
             "capital_per_trade_pct": 0.1,
-            "tp_sl_ratio_preference": 0.4,
-            "drawdown_sensitivity": 0.2,
+            "tp_sl_ratio_preference": 0.25,
+            "max_profit_close_pct": 0.2,
+            "trade_frequency_window_score": 0.15,
+            "avg_holding_time_score": 0.2,
             "post_loss_rest_min": 0.1,
+            "drawdown_sensitivity": 0.2,
+            "streak_risk_adjustment": 0.25,
+            "intraday_var_limit": 0.1,
+            "entry_slippage_tolerance_bps": 0.1,
+            "time_of_day_performance_bias": 0.5,
+            "news_proximity_buffer_min": 0.1,
+            "partial_tp_preference": 0.5,
+            "breakeven_migration_trigger_pct": 0.1,
+            "breakeven_migration_time_min": 0.2,
         },
     )
     env = DummyVecEnv([lambda: env])
@@ -128,7 +139,12 @@ def train_ppo_agent(
     return model
 
 
-def evaluate_agent(model: PPO, df: pd.DataFrame, n_episodes: int = 5) -> dict:
+def evaluate_agent(
+    model: PPO,
+    df: pd.DataFrame,
+    n_episodes: int = 1,
+    max_eval_rows: int = 0,
+) -> dict:
     """
     Evaluate trained PPO agent.
     
@@ -140,7 +156,8 @@ def evaluate_agent(model: PPO, df: pd.DataFrame, n_episodes: int = 5) -> dict:
     Returns:
         Evaluation metrics
     """
-    env_df = df.rename(
+    eval_df = df.tail(max_eval_rows).copy() if max_eval_rows and max_eval_rows > 0 else df
+    env_df = eval_df.rename(
         columns={
             "open": "Open",
             "high": "High",
@@ -184,6 +201,9 @@ if __name__ == "__main__":
     parser.add_argument("--timesteps", type=int, default=30000)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--behavior-json", default="")
+    parser.add_argument("--eval-episodes", type=int, default=1)
+    parser.add_argument("--max-eval-rows", type=int, default=0)
+    parser.add_argument("--skip-eval", action="store_true")
     args = parser.parse_args()
 
     behavior_array = None
@@ -225,14 +245,23 @@ if __name__ == "__main__":
         behavior_array=behavior_array,
     )
     
-    # Evaluate
-    print("\nEvaluating agent...")
-    metrics = evaluate_agent(model, train_df, n_episodes=5)
+    if args.skip_eval:
+        print("\nSkipping evaluation (--skip-eval).")
+        metrics = None
+    else:
+        print("\nEvaluating agent...")
+        metrics = evaluate_agent(
+            model,
+            train_df,
+            n_episodes=max(1, args.eval_episodes),
+            max_eval_rows=max(0, args.max_eval_rows),
+        )
     
     print("\n" + "=" * 50)
     print("Training complete!")
     print("=" * 50)
-    print(f"Average Return: {metrics['avg_return']*100:.2f}%")
-    print(f"Sharpe Ratio: {metrics['avg_sharpe']:.2f}")
-    print(f"Best Return: {metrics['best_return']*100:.2f}%")
-    print(f"Worst Return: {metrics['worst_return']*100:.2f}%")
+    if metrics is not None:
+        print(f"Average Return: {metrics['avg_return']*100:.2f}%")
+        print(f"Sharpe Ratio: {metrics['avg_sharpe']:.2f}")
+        print(f"Best Return: {metrics['best_return']*100:.2f}%")
+        print(f"Worst Return: {metrics['worst_return']*100:.2f}%")

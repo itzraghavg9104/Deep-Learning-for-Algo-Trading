@@ -39,6 +39,23 @@ class TradingEnv(gym.Env):
     """
     
     metadata = {"render_modes": ["human"]}
+    BEHAVIOR_FEATURE_KEYS = [
+        "capital_per_trade_pct",
+        "tp_sl_ratio_preference",
+        "max_profit_close_pct",
+        "trade_frequency_window_score",
+        "avg_holding_time_score",
+        "post_loss_rest_min",
+        "drawdown_sensitivity",
+        "streak_risk_adjustment",
+        "intraday_var_limit",
+        "entry_slippage_tolerance_bps",
+        "time_of_day_performance_bias",
+        "news_proximity_buffer_min",
+        "partial_tp_preference",
+        "breakeven_migration_trigger_pct",
+        "breakeven_migration_time_min",
+    ]
     
     def __init__(
         self,
@@ -70,6 +87,11 @@ class TradingEnv(gym.Env):
         self.risk_tolerance = risk_tolerance
         self.window_size = window_size
         self.behavior_array = behavior_array or {}
+        # Keep all behavior dimensions bounded and available to PPO state.
+        self.behavior_array = {
+            key: float(np.clip(self.behavior_array.get(key, 0.0), 0.0, 1.0))
+            for key in self.BEHAVIOR_FEATURE_KEYS
+        }
         
         # Action space: HOLD BUY, HOLD SELL, BUY, SELL, IDLE
         self.action_space = spaces.Discrete(5)
@@ -262,10 +284,8 @@ class TradingEnv(gym.Env):
         state.append(self.cash / self.initial_capital)
         state.append(self.shares * current_price / portfolio_value if portfolio_value > 0 else 0)
         state.append(self.risk_tolerance)
-        state.append(float(self.behavior_array.get("capital_per_trade_pct", 0.1)))
-        state.append(float(self.behavior_array.get("tp_sl_ratio_preference", 0.4)))
-        state.append(float(self.behavior_array.get("drawdown_sensitivity", 0.2)))
-        state.append(float(self.behavior_array.get("post_loss_rest_min", 0.1)))
+        for key in self.BEHAVIOR_FEATURE_KEYS:
+            state.append(float(self.behavior_array.get(key, 0.0)))
         
         # P&L state
         if self.shares > 0 and self.avg_entry_price > 0:
