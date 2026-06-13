@@ -131,7 +131,7 @@ def calculate_step_reward(
     - Risk-adjusted component
     
     Args:
-        action: 0=HOLD, 1=BUY, 2=SELL
+        action: action code from app.layer2_decision.action_space
         price_change_pct: Price change as percentage
         position: Current position (normalized)
         risk_tolerance: User's risk tolerance
@@ -147,7 +147,8 @@ def calculate_step_reward(
         reward += position * price_change_pct / 100
     
     # Transaction cost for trades
-    if action != 0:  # BUY or SELL
+    # Penalize transaction-oriented actions, but not IDLE.
+    if action in (0, 1, 2, 3):
         reward -= transaction_cost
     
     # Risk adjustment (penalize large positions for conservative traders)

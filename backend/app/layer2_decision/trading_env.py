@@ -11,6 +11,13 @@ from typing import Optional, Tuple, Dict, Any
 
 from app.layer1_data_processing.technical_indicators import compute_indicators
 from app.layer2_decision.reward_function import calculate_step_reward, RewardTracker
+from app.layer2_decision.action_space import (
+    ACTION_BUY,
+    ACTION_HOLD_BUY,
+    ACTION_HOLD_SELL,
+    ACTION_IDLE,
+    ACTION_SELL,
+)
 
 
 class TradingEnv(gym.Env):
@@ -18,9 +25,11 @@ class TradingEnv(gym.Env):
     Stock Trading Environment for Reinforcement Learning.
     
     Actions:
-        0: HOLD
-        1: BUY
-        2: SELL
+        0: HOLD BUY
+        1: HOLD SELL
+        2: BUY
+        3: SELL
+        4: IDLE
     
     Observation:
         State vector from Layer 1 (technical indicators, price data, etc.)
@@ -30,6 +39,23 @@ class TradingEnv(gym.Env):
     """
     
     metadata = {"render_modes": ["human"]}
+    BEHAVIOR_FEATURE_KEYS = [
+        "capital_per_trade_pct",
+        "tp_sl_ratio_preference",
+        "max_profit_close_pct",
+        "trade_frequency_window_score",
+        "avg_holding_time_score",
+        "post_loss_rest_min",
+        "drawdown_sensitivity",
+        "streak_risk_adjustment",
+        "intraday_var_limit",
+        "entry_slippage_tolerance_bps",
+        "time_of_day_performance_bias",
+        "news_proximity_buffer_min",
+        "partial_tp_preference",
+        "breakeven_migration_trigger_pct",
+        "breakeven_migration_time_min",
+    ]
     
     def __init__(
         self,
@@ -39,6 +65,7 @@ class TradingEnv(gym.Env):
         transaction_cost: float = 0.001,
         risk_tolerance: float = 0.5,
         window_size: int = 20,
+        behavior_array: Optional[Dict[str, float]] = None,
     ):
         """
         Initialize the trading environment.
@@ -59,13 +86,19 @@ class TradingEnv(gym.Env):
         self.transaction_cost = transaction_cost
         self.risk_tolerance = risk_tolerance
         self.window_size = window_size
+        self.behavior_array = behavior_array or {}
+        # Keep all behavior dimensions bounded and available to PPO state.
+        self.behavior_array = {
+            key: float(np.clip(self.behavior_array.get(key, 0.0), 0.0, 1.0))
+            for key in self.BEHAVIOR_FEATURE_KEYS
+        }
         
-        # Action space: 0=HOLD, 1=BUY, 2=SELL
-        self.action_space = spaces.Discrete(3)
+        # Action space: HOLD BUY, HOLD SELL, BUY, SELL, IDLE
+        self.action_space = spaces.Discrete(5)
         
         # Observation space: state vector dimension
         # Approximate size based on indicators + portfolio state
-        self.state_dim = 30
+        self.state_dim = 34
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -111,7 +144,7 @@ class TradingEnv(gym.Env):
         Execute one step in the environment.
         
         Args:
-            action: 0=HOLD, 1=BUY, 2=SELL
+            action: see action_space.py
         
         Returns:
             observation, reward, terminated, truncated, info
@@ -151,53 +184,70 @@ class TradingEnv(gym.Env):
     
     def _execute_action(self, action: int, current_price: float):
         """Execute trading action."""
-        if action == 1:  # BUY
+        if action == ACTION_HOLD_BUY:
+            # Keep existing long bias; if flat, open a small position.
+            if self.shares == 0:
+                self._buy_shares(current_price, max(1, self.max_shares // 4))
+        elif action == ACTION_HOLD_SELL:
+            # Keep existing short/exit bias; if long, reduce partially.
+            if self.shares > 0:
+                shares_to_sell = max(1, self.shares // 2)
+                self._sell_shares(current_price, shares_to_sell)
+        elif action == ACTION_BUY:
             # Calculate shares to buy
             available_cash = self.cash * (1 - self.transaction_cost)
             shares_to_buy = min(
                 int(available_cash / current_price),
                 self.max_shares
             )
-            
-            if shares_to_buy > 0:
-                cost = shares_to_buy * current_price * (1 + self.transaction_cost)
-                self.cash -= cost
-                
-                # Update average entry price
-                if self.shares > 0:
-                    total_cost = self.avg_entry_price * self.shares + current_price * shares_to_buy
-                    self.shares += shares_to_buy
-                    self.avg_entry_price = total_cost / self.shares
-                else:
-                    self.shares = shares_to_buy
-                    self.avg_entry_price = current_price
-                
-                self.trades.append({
-                    'step': self.current_step,
-                    'action': 'BUY',
-                    'price': current_price,
-                    'shares': shares_to_buy,
-                })
-        
-        elif action == 2:  # SELL
+            self._buy_shares(current_price, shares_to_buy)
+        elif action == ACTION_SELL:
             if self.shares > 0:
-                # Sell all shares
-                proceeds = self.shares * current_price * (1 - self.transaction_cost)
-                pnl = proceeds - (self.shares * self.avg_entry_price)
-                
-                self.trades.append({
-                    'step': self.current_step,
-                    'action': 'SELL',
-                    'price': current_price,
-                    'shares': self.shares,
-                    'pnl': pnl,
-                })
-                
-                self.cash += proceeds
-                self.shares = 0
-                self.avg_entry_price = 0.0
-        
-        # action == 0 (HOLD) does nothing
+                self._sell_shares(current_price, self.shares)
+        # ACTION_IDLE does nothing
+
+    def _buy_shares(self, current_price: float, shares_to_buy: int):
+        if shares_to_buy <= 0:
+            return
+        cost = shares_to_buy * current_price * (1 + self.transaction_cost)
+        if cost > self.cash:
+            return
+        self.cash -= cost
+
+        if self.shares > 0:
+            total_cost = self.avg_entry_price * self.shares + current_price * shares_to_buy
+            self.shares += shares_to_buy
+            self.avg_entry_price = total_cost / self.shares
+        else:
+            self.shares = shares_to_buy
+            self.avg_entry_price = current_price
+
+        self.trades.append({
+            "step": self.current_step,
+            "action": "BUY",
+            "price": current_price,
+            "shares": shares_to_buy,
+        })
+
+    def _sell_shares(self, current_price: float, shares_to_sell: int):
+        if shares_to_sell <= 0 or self.shares <= 0:
+            return
+        shares_to_sell = min(shares_to_sell, self.shares)
+        proceeds = shares_to_sell * current_price * (1 - self.transaction_cost)
+        pnl = proceeds - (shares_to_sell * self.avg_entry_price)
+
+        self.trades.append({
+            "step": self.current_step,
+            "action": "SELL",
+            "price": current_price,
+            "shares": shares_to_sell,
+            "pnl": pnl,
+        })
+
+        self.cash += proceeds
+        self.shares -= shares_to_sell
+        if self.shares == 0:
+            self.avg_entry_price = 0.0
     
     def _get_observation(self) -> np.ndarray:
         """Get current observation (state vector)."""
@@ -234,6 +284,8 @@ class TradingEnv(gym.Env):
         state.append(self.cash / self.initial_capital)
         state.append(self.shares * current_price / portfolio_value if portfolio_value > 0 else 0)
         state.append(self.risk_tolerance)
+        for key in self.BEHAVIOR_FEATURE_KEYS:
+            state.append(float(self.behavior_array.get(key, 0.0)))
         
         # P&L state
         if self.shares > 0 and self.avg_entry_price > 0:

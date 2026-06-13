@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { SignalCard, StatsCard } from "@/components/dashboard";
-import { tradingApi } from "@/lib/api";
+import { profileApi, tradingApi } from "@/lib/api";
 import { PriceChart } from "@/components/charts/PriceChart";
 import { TechnicalIndicators } from "@/components/charts/TechnicalIndicators";
 import { SignalGauge } from "@/components/charts/SignalGauge";
 import { useWebsocket } from "@/lib/use-websocket";
 import { getMarketStatusLabel, isMarketOpen } from "@/lib/market-hours";
+import { ACTIONS, formatChangePct, isBuyishAction, isSellishAction, normalizeAction } from "@/lib/trading-format";
 import { RefreshCw, Clock, Wifi, WifiOff } from "lucide-react";
 
 interface Signal {
@@ -16,7 +17,15 @@ interface Signal {
     change_pct: number;
     action: string;
     confidence: number;
+    target_price?: number | null;
+    trade_plan?: {
+        capital_per_trade_pct?: number;
+        tp_sl_ratio_target?: number;
+        capital_amount_inr?: number;
+        profit_target_exit_price?: number;
+    } | null;
 }
+type IndexSignal = { label: string; symbol: string; price: number; change_pct: number };
 
 type MarketHistoryPoint = {
     timestamp: string;
@@ -54,13 +63,47 @@ export default function DashboardPage() {
         isOpen: isMarketOpen(),
         label: getMarketStatusLabel(),
     }));
+    const [indexSignals, setIndexSignals] = useState<IndexSignal[]>([]);
 
     const fetchSignals = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const data = await tradingApi.getWatchlist();
-            setSignals(data.signals || []);
+            let params: Record<string, number | string> = {};
+            try {
+                const profile = await profileApi.getProfile();
+                const behavior = profile?.behavior_profile?.behavior_array || {};
+                const riskTolerance = Number(profile?.risk_profile?.tolerance ?? 0.5);
+                params = {
+                    user_id: String(profile?.id ?? ""),
+                    risk_tolerance: Number.isFinite(riskTolerance) ? riskTolerance : 0.5,
+                    capital_per_trade_pref: Number(behavior.capital_per_trade_pct ?? 0.1),
+                    tp_sl_pref: Number(behavior.tp_sl_ratio_preference ?? 0.25),
+                    max_profit_pref: Number(behavior.max_profit_close_pct ?? 0.2),
+                    max_drawdown_pref: Number(behavior.drawdown_sensitivity ?? 0.2),
+                    cooldown_pref: Number(behavior.post_loss_rest_min ?? 0.1),
+                    trade_frequency_pref: Number(behavior.trade_frequency_window_score ?? 0.15),
+                    holding_time_pref: Number(behavior.avg_holding_time_score ?? 0.2),
+                    streak_adjustment_pref: Number(behavior.streak_risk_adjustment ?? 0.25),
+                    intraday_var_pref: Number(behavior.intraday_var_limit ?? 0.1),
+                    slippage_pref: Number(behavior.entry_slippage_tolerance_bps ?? 0.1),
+                    session_bias_pref: Number(behavior.time_of_day_performance_bias ?? 0.5),
+                    news_buffer_pref: Number(behavior.news_proximity_buffer_min ?? 0.1),
+                    partial_tp_pref: Number(behavior.partial_tp_preference ?? 0.5),
+                    breakeven_trigger_pref: Number(behavior.breakeven_migration_trigger_pct ?? 0.1),
+                    breakeven_time_pref: Number(behavior.breakeven_migration_time_min ?? 0.2),
+                };
+            } catch {
+                // profile unavailable; use server defaults
+            }
+
+            const data = await tradingApi.getWatchlist(params);
+            const normalizedSignals = ((data.top20 || data.signals) || []).map((signal: Signal) => ({
+                ...signal,
+                action: normalizeAction(signal.action),
+            }));
+            setSignals(normalizedSignals);
+            setIndexSignals(data.indices || []);
             setLastUpdated(new Date());
             setIsConnected(true);
         } catch {
@@ -68,13 +111,14 @@ export default function DashboardPage() {
             setIsConnected(false);
             // Demo data when backend is down
             setSignals([
-                { symbol: "RELIANCE.NS", price: 1544.40, change_pct: 0.14, action: "HOLD", confidence: 0.50 },
-                { symbol: "TCS.NS", price: 3217.80, change_pct: 0.40, action: "HOLD", confidence: 0.50 },
-                { symbol: "INFY.NS", price: 1602.00, change_pct: 0.57, action: "HOLD", confidence: 0.50 },
-                { symbol: "HDFCBANK.NS", price: 984.00, change_pct: -1.04, action: "HOLD", confidence: 0.50 },
-                { symbol: "ICICIBANK.NS", price: 1352.40, change_pct: -1.00, action: "HOLD", confidence: 0.50 },
-                { symbol: "SBIN.NS", price: 838.50, change_pct: 0.32, action: "BUY", confidence: 0.65 },
+                { symbol: "RELIANCE.NS", price: 1544.40, change_pct: 0.14, action: ACTIONS.IDLE, confidence: 0.50 },
+                { symbol: "TCS.NS", price: 3217.80, change_pct: 0.40, action: ACTIONS.IDLE, confidence: 0.50 },
+                { symbol: "INFY.NS", price: 1602.00, change_pct: 0.57, action: ACTIONS.IDLE, confidence: 0.50 },
+                { symbol: "HDFCBANK.NS", price: 984.00, change_pct: -1.04, action: ACTIONS.IDLE, confidence: 0.50 },
+                { symbol: "ICICIBANK.NS", price: 1352.40, change_pct: -1.00, action: ACTIONS.IDLE, confidence: 0.50 },
+                { symbol: "SBIN.NS", price: 838.50, change_pct: 0.32, action: ACTIONS.BUY, confidence: 0.65 },
             ]);
+            setIndexSignals([]);
         } finally {
             setLoading(false);
         }
@@ -83,6 +127,13 @@ export default function DashboardPage() {
     // Initial fetch
     useEffect(() => {
         fetchSignals();
+    }, [fetchSignals]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchSignals();
+        }, 30000);
+        return () => clearInterval(interval);
     }, [fetchSignals]);
 
     useEffect(() => {
@@ -98,8 +149,8 @@ export default function DashboardPage() {
 
     // Calculate portfolio metrics from signals
     const totalChange = signals.reduce((acc, s) => acc + s.change_pct, 0) / (signals.length || 1);
-    const buySignals = signals.filter(s => s.action === "BUY").length;
-    const sellSignals = signals.filter(s => s.action === "SELL").length;
+    const buySignals = signals.filter((s) => isBuyishAction(s.action)).length;
+    const sellSignals = signals.filter((s) => isSellishAction(s.action)).length;
 
     const selectedSignal = useMemo(
         () => signals.find((signal) => signal.symbol === selectedSymbol) ?? null,
@@ -126,6 +177,8 @@ export default function DashboardPage() {
         setMarketData(null);
         setMarketError(null);
     };
+
+    const selectedDayChange = selectedSignal?.change_pct ?? marketData?.change_pct ?? 0;
 
     useEffect(() => {
         if (!signals.length) return;
@@ -268,7 +321,7 @@ export default function DashboardPage() {
                 />
                 <StatsCard
                     title="Avg. Change"
-                    value={`${totalChange >= 0 ? "+" : ""}${totalChange.toFixed(2)}%`}
+                    value={formatChangePct(totalChange)}
                     change={totalChange}
                     icon={totalChange >= 0 ? "up" : "down"}
                     color={totalChange >= 0 ? "green" : "red"}
@@ -290,7 +343,7 @@ export default function DashboardPage() {
             {/* Signals Section */}
             <div className="mb-6">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-white">Trading Signals</h2>
+                    <h2 className="text-xl font-semibold text-white">Top 20 NIFTY 50 Signals</h2>
                     <span className="text-sm text-gray-500">{signals.length} stocks</span>
                 </div>
 
@@ -314,6 +367,8 @@ export default function DashboardPage() {
                                 change_pct={signal.change_pct}
                                 action={signal.action}
                                 confidence={signal.confidence}
+                                target_price={signal.target_price}
+                                trade_plan={signal.trade_plan}
                                 sparkline={sparklineBySymbol[signal.symbol]?.values}
                                 flash={flashBySymbol[signal.symbol]}
                                 onClick={() => openSymbol(signal.symbol)}
@@ -321,6 +376,27 @@ export default function DashboardPage() {
                         ))}
                     </div>
                 )}
+            </div>
+
+            <div className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-white">Index Moves</h2>
+                    <span className="text-sm text-gray-500">NIFTY50 · MIDCAP150 · SMALLCAP250</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {indexSignals.map((idx) => (
+                        <div key={idx.symbol} className="bg-gray-800/40 border border-gray-700 rounded-xl p-4">
+                            <p className="text-sm text-gray-400">{idx.label}</p>
+                            <p className="text-xl font-semibold text-white">₹{idx.price.toFixed(2)}</p>
+                            <p className={`text-sm ${idx.change_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                {formatChangePct(idx.change_pct)}
+                            </p>
+                        </div>
+                    ))}
+                    {!indexSignals.length && (
+                        <div className="text-sm text-gray-500 col-span-full">Index data unavailable right now.</div>
+                    )}
+                </div>
             </div>
 
             {/* Model Info */}
@@ -349,7 +425,7 @@ export default function DashboardPage() {
 
             {selectedSymbol && (
                 <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-                    <div className="w-full max-w-5xl bg-gray-950 border border-gray-800 rounded-2xl p-6 space-y-4">
+                    <div className="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-gray-950 border border-gray-800 rounded-2xl p-6 space-y-4">
                         <div className="flex items-center justify-between">
                             <div>
                                 <h2 className="text-2xl font-semibold text-white">{selectedSymbol}</h2>
@@ -383,9 +459,8 @@ export default function DashboardPage() {
                                         <p className="text-2xl text-white font-semibold">
                                             â‚¹{marketData.current_price.toFixed(2)}
                                         </p>
-                                        <p className={`text-sm ${marketData.change_pct >= 0 ? "text-green-300" : "text-red-300"}`}>
-                                            {marketData.change_pct >= 0 ? "+" : ""}
-                                            {marketData.change_pct.toFixed(2)}%
+                                        <p className={`text-sm ${selectedDayChange >= 0 ? "text-green-300" : "text-red-300"}`}>
+                                            {formatChangePct(selectedDayChange)}
                                         </p>
                                     </div>
                                     <div className="p-4 border border-gray-800 rounded-xl bg-gray-900/40">

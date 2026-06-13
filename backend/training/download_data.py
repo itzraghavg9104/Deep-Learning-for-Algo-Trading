@@ -4,35 +4,20 @@ Data download script for NIFTY 50 stocks.
 Downloads historical data using yfinance for model training.
 """
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Optional
+from app.layer1_data_processing.market_data import get_nifty50_symbols
 
 
-# NIFTY 50 constituent stocks (top 20 for training)
-NIFTY_50_SYMBOLS = [
-    "RELIANCE.NS",
-    "TCS.NS",
-    "INFY.NS",
-    "HDFCBANK.NS",
-    "ICICIBANK.NS",
-    "SBIN.NS",
-    "BHARTIARTL.NS",
-    "ITC.NS",
-    "KOTAKBANK.NS",
-    "LT.NS",
-    "HINDUNILVR.NS",
-    "AXISBANK.NS",
-    "BAJFINANCE.NS",
-    "MARUTI.NS",
-    "ASIANPAINT.NS",
-    "WIPRO.NS",
-    "HCLTECH.NS",
-    "SUNPHARMA.NS",
-    "TITAN.NS",
-    "TATAMOTORS.NS",
-]
+# NIFTY 50 constituent stocks
+NIFTY_50_SYMBOLS = get_nifty50_symbols()
 
 
 def download_stock_data(

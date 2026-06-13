@@ -17,6 +17,7 @@ except ImportError:
     print("Warning: stable-baselines3 not installed. PPO agent will not be available.")
 
 from app.layer2_decision.trading_env import TradingEnv
+from app.layer2_decision.action_space import ACTION_LABELS
 
 
 class TradingAgent:
@@ -205,17 +206,11 @@ class TradingAgent:
         """
         action, probs = self.predict(observation)
         
-        action_names = ["HOLD", "BUY", "SELL"]
-        
         return {
-            "action": action_names[action],
+            "action": ACTION_LABELS[action],
             "action_code": action,
             "confidence": float(probs[action]),
-            "probabilities": {
-                "HOLD": float(probs[0]),
-                "BUY": float(probs[1]),
-                "SELL": float(probs[2]),
-            }
+            "probabilities": {label: float(probs[idx]) for idx, label in enumerate(ACTION_LABELS)}
         }
     
     def save(self, path: str):

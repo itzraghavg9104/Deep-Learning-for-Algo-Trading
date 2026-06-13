@@ -76,9 +76,13 @@ api.interceptors.response.use(
 
 // Trading API
 export const tradingApi = {
-  getSignal: async (symbol: string, useSentiment: boolean = false) => {
+  getSignal: async (
+    symbol: string,
+    useSentiment: boolean = false,
+    params?: Record<string, string | number | boolean | undefined>,
+  ) => {
     const response = await api.get(`/trading/signals/${symbol}`, {
-      params: { use_sentiment: useSentiment },
+      params: { use_sentiment: useSentiment, ...(params || {}) },
     });
     return response.data;
   },
@@ -90,8 +94,8 @@ export const tradingApi = {
     return response.data;
   },
 
-  getWatchlist: async () => {
-    const response = await api.get("/trading/watchlist");
+  getWatchlist: async (params?: Record<string, string | number | boolean | undefined>) => {
+    const response = await api.get("/trading/watchlist", { params: params || {} });
     return response.data;
   },
 };
@@ -124,6 +128,11 @@ export const profileApi = {
 
   submitBehaviorAssessment: async (answers: Record<string, unknown>) => {
     const response = await api.post("/profile/behavior-assessment", { answers });
+    return response.data;
+  },
+
+  getModelTrainingStatus: async () => {
+    const response = await api.get("/profile/model-training-status");
     return response.data;
   },
 

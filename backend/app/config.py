@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     MODEL_PATH: str = "./models"
     DEEPAR_MODEL: str = "deepar_v1.pt"
     PPO_MODEL: str = "ppo_agent_v1.zip"
+    AUTO_TRAIN_IF_MISSING: bool = True
+    AUTO_TRAIN_STRICT: bool = False
     
     # JWT
     JWT_SECRET: str = "jwt-secret-change-in-production"
